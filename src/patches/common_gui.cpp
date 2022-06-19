@@ -5,10 +5,6 @@
 // - Several mappings can concern the same option, to allow for primary / secondaries and even more
 //      - Therefore, loop must not stop as soon as we found one
 // - Also introduce a "size" to mention the number of consecutive tiles to mark
-// TODO:
-// - Draw text using a routine that contains "bars of text" with coordinates
-//      Format: X,Y,TEXT_UNTIL_FF
-
 
 
 // ROM offsets that are only valid in S3K
@@ -19,8 +15,6 @@ constexpr uint32_t Wait_VSync = 0x1D18;
 constexpr uint32_t Plane_Map_To_VRAM = 0x14E6;
 constexpr uint32_t Nem_Decomp = 0x15BA;
 constexpr uint32_t Clear_DisplayData = 0x11CA;
-constexpr uint32_t LEVEL_SELECT_TEXT = 0x80E6;
-constexpr uint32_t LEVEL_SELECT_MAPPINGS = 0x80C4;
 
 // Global RAM offsets that are always valid
 constexpr uint32_t RAM_start = 0xFFFF0000;
@@ -219,10 +213,7 @@ uint32_t inject_func_build_text_plane(md::ROM& rom)
     func_build_text_plane.lea(addr_(text_mappings_addr), reg_A5);
     func_build_text_plane.moveq(0, reg_D0);
 
-    // A1: pointer on text descriptor list
-    // A5: pointer on coordinates
-
-    // Write line loop
+    // Double loop to write each letter of each line of text
     func_build_text_plane.label("loop_write_line");
     func_build_text_plane.movew(addr_postinc_(reg_A5), reg_D3);
     func_build_text_plane.cmpiw(0xFFFF, reg_D3);
@@ -232,31 +223,11 @@ uint32_t inject_func_build_text_plane(md::ROM& rom)
     func_build_text_plane.moveb(addr_postinc_(reg_A1), reg_D2);
     func_build_text_plane.movew(reg_D2, reg_D3);
 
-    // Write letter loop
     func_build_text_plane.label("loop_write_letter");
     func_build_text_plane.moveb(addr_postinc_(reg_A1), reg_D0);
     func_build_text_plane.movew(reg_D0, addr_postinc_(reg_A2));
     func_build_text_plane.dbra(reg_D2, "loop_write_letter");
-
-//    func_build_text_plane.movew(0xD, reg_D2); // Maximum length of string
-//    func_build_text_plane.subw(reg_D3, reg_D2); // Get remaining space in string
-//    func_build_text_plane.bcs("string_full");
-
-//    func_build_text_plane.label("blank_loop");
-//    func_build_text_plane.movew(0x0, addr_postinc_(reg_A2));
-//    func_build_text_plane.dbra(reg_D2, "blank_loop");
-
-//    func_build_text_plane.label("string_full");
-//    func_build_text_plane.movew(0x11, addr_(reg_A2)); // #make_art_tile('1',0,0) ---> Write (act) '1'
-//    func_build_text_plane.lea(addr_(reg_A2, 0x50), reg_A2); // Next line
-//    func_build_text_plane.movew(0x12, addr_(reg_A2)); // #make_art_tile('2',0,0) ---> Write (act) '2'
     func_build_text_plane.bra("loop_write_line");
-
-//    func_build_text_plane.movew(0x0, addr_(reg_A2)); // Get rid of (act) '2' on sound test
-//    func_build_text_plane.lea(addr_(reg_A2, 0xFFFFFFB0), reg_A2); // Go back to act 1
-//    func_build_text_plane.movew(0x1A, addr_(reg_A2));  // Replace act 1 by *
-//    func_build_text_plane.movew(0x13, addr_(0xFFFF018A));  // Make Lava Reef duplicate acts 3 & 4
-//    func_build_text_plane.movew(0x14, addr_(0xFFFF01DA));
 
     // Send our built plane map to VRAM
     func_build_text_plane.label("complete");
