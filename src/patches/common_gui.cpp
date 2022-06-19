@@ -64,17 +64,15 @@ const std::vector<std::pair<uint8_t, uint8_t>> TEXT_MAPPINGS = {
 
 typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
 const std::vector<SelectionMapping> SELECTION_MAPPINGS = {
-        { 0, 1, 1, 5 },
-        { 1, 1, 3, 5 },
-        { 2, 1, 5, 5 },
-        { 3, 1, 7, 5 },
-        { 4, 1, 9, 5 },
-        { 5, 1, 11, 5 },
-
-        { 6, 1, 15, 5 },
-        { 7, 1, 17, 5 },
-
-        { 8, 1, 21, 5 }
+        { 0, 1, 1,  38 },
+        { 1, 1, 3,  38 },
+        { 2, 1, 5,  38 },
+        { 3, 1, 7,  38 },
+        { 4, 1, 9,  38 },
+        { 5, 1, 11, 38 },
+        { 6, 1, 15, 38 },
+        { 7, 1, 17, 38 },
+        { 8, 1, 21, 38 }
 };
 /*
 const std::vector<std::vector<std::string>> SELECTION_OPTIONS = {
@@ -310,7 +308,7 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
     // UP pressed : decrease selected option by one, looping to the end if needed
     func_handle_gui_controls.subqw(1, reg_D0);
     func_handle_gui_controls.bcc("test_down");
-    func_handle_gui_controls.moveq(NUM_OPTIONS, reg_D0);
+    func_handle_gui_controls.moveq(SELECTION_MAPPINGS.size()-1, reg_D0);
 
     // Test if down is pressed
     func_handle_gui_controls.label("test_down");
@@ -319,7 +317,7 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
 
     // DOWN pressed : increase selected option by one, looping back to the first option if needed
     func_handle_gui_controls.addqw(1, reg_D0); // yes, add 1
-    func_handle_gui_controls.cmpiw(NUM_OPTIONS, reg_D0);
+    func_handle_gui_controls.cmpiw(SELECTION_MAPPINGS.size()-1, reg_D0);
     func_handle_gui_controls.ble("return");
     func_handle_gui_controls.moveq(0, reg_D0); // if not, set to 0
 
@@ -333,16 +331,21 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
 
 uint32_t inject_func_mark_fields(md::ROM& rom)
 {
-    constexpr uint32_t LevSel_MarkTable = 0x8040;
+    uint32_t selection_mappings_addr = inject_selection_mappings(rom);
 
     md::Code func_change_palette;
 
-    // Read info from A3 to compose D1 (VDP control word)
+    // Read X position beforehand, double it and store it in D2 to re-use it later
+    func_change_palette.moveq(0, reg_D2);
+    func_change_palette.moveb(addr_(reg_A5), reg_D2);
+    func_change_palette.lslb(1, reg_D2);
+
+    // Read info from A5 to compose D1 (VDP control word)
     func_change_palette.moveq(0, reg_D1);
-    func_change_palette.moveb(addr_(reg_A3), reg_D1);
+    func_change_palette.moveb(addr_(reg_A5, 0x1), reg_D1);
     func_change_palette.beq("return");
     func_change_palette.lslw(7, reg_D1);
-    func_change_palette.addb(addr_(reg_A3, 0x1), reg_D1);
+    func_change_palette.addb(reg_D2, reg_D1);
     func_change_palette.addiw(0xC000, reg_D1); // VRAM_Plane_A_Name_Table
     func_change_palette.lsll(2, reg_D1);
     func_change_palette.lsrw(2, reg_D1);
@@ -350,21 +353,21 @@ uint32_t inject_func_mark_fields(md::ROM& rom)
     func_change_palette.swap(reg_D1);
     func_change_palette.movel(reg_D1, addr_(VDP_control_port));
 
-    // Read the same info from A3 to deduce A1 (base address where to alter used palette)
+    // Read the same info from A5 to deduce A1 (base address where to alter used palette)
     func_change_palette.moveq(0, reg_D0);
-    func_change_palette.moveb(addr_(reg_A3), reg_D0);
+    func_change_palette.moveb(addr_(reg_A5, 0x1), reg_D0);
     func_change_palette.mulu(0x50, reg_D0);
-    func_change_palette.moveq(0, reg_D1);
-    func_change_palette.moveb(addr_(reg_A3, 0x1), reg_D1);
-    func_change_palette.addw(reg_D1, reg_D0);
+    func_change_palette.addw(reg_D2, reg_D0);
     func_change_palette.lea(addrw_(reg_A4, reg_D0), reg_A1);
 
     // Send the tile (A1) with palette ID (D3) on the VDP Data port (A6)
+    func_change_palette.moveq(0, reg_D1);
+    func_change_palette.moveb(addr_(reg_A5, 0x2), reg_D1);
     func_change_palette.label("loop");
     func_change_palette.movew(addr_postinc_(reg_A1), reg_D0);
     func_change_palette.addw(reg_D3, reg_D0);
     func_change_palette.movew(reg_D0, addr_(reg_A6));
-    func_change_palette.dbra(reg_D2, "loop");
+    func_change_palette.dbra(reg_D1, "loop");
 
     func_change_palette.label("return");
     func_change_palette.rts();
@@ -374,23 +377,21 @@ uint32_t inject_func_mark_fields(md::ROM& rom)
 
     md::Code func_mark_fields;
     func_mark_fields.lea(addr_(RAM_start), reg_A4);
-    func_mark_fields.lea(addr_(LevSel_MarkTable), reg_A5);
+    func_mark_fields.lea(addr_(selection_mappings_addr), reg_A5);
     func_mark_fields.lea(addr_(VDP_data_port), reg_A6);
     func_mark_fields.moveq(0, reg_D0);
     func_mark_fields.movew(addrw_(Level_select_option), reg_D0);
-    func_mark_fields.lslw(2, reg_D0);
-    func_mark_fields.lea(addrw_(reg_A5, reg_D0), reg_A3);
 
-    // Change palette for 0xF consecutive tiles, reading info from A3
-    func_mark_fields.moveq(0xE, reg_D2);
+    func_mark_fields.label("loop");
+    func_mark_fields.cmpb(addr_postinc_(reg_A5), reg_D0);
+    func_mark_fields.bmi("return");
+    func_mark_fields.bne("next_mapping");
     func_mark_fields.jsr(func_change_palette_addr);
+    func_mark_fields.label("next_mapping");
+    func_mark_fields.addqw(0x3, reg_A5);
+    func_mark_fields.bra("loop");
 
-    func_mark_fields.addqw(2, reg_A3);
-
-    // Change palette for 1 tile, reading info from A3
-    func_mark_fields.moveq(0, reg_D2);
-    func_mark_fields.jsr(func_change_palette_addr);
-
+    func_mark_fields.label("return");
     func_mark_fields.rts();
 
     return rom.inject_code(func_mark_fields);
