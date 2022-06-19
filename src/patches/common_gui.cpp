@@ -62,6 +62,32 @@ const std::vector<std::pair<uint8_t, uint8_t>> TEXT_MAPPINGS = {
         { 1, 21 }
 };
 
+typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
+const std::vector<SelectionMapping> SELECTION_MAPPINGS = {
+        { 0, 1, 1, 5 },
+        { 1, 1, 3, 5 },
+        { 2, 1, 5, 5 },
+        { 3, 1, 7, 5 },
+        { 4, 1, 9, 5 },
+        { 5, 1, 11, 5 },
+
+        { 6, 1, 15, 5 },
+        { 7, 1, 17, 5 },
+
+        { 8, 1, 21, 5 }
+};
+/*
+const std::vector<std::vector<std::string>> SELECTION_OPTIONS = {
+    { "SONIC AND TAILS", "SONIC", "TAILS", "KNUCKLES" },
+    { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14" },
+    { "NONE", "LIGHTNING", "FIRE", "WATER" },
+    { "ENABLED", "DISABLED" },
+    { "YES", "NO" },
+    { "ENABLED", "DISABLED" },
+    { "ANGEL ISLAND", "HYDROCITY", "MARBLE GARDEN", "CARNIVAL NIGHT", "ICECAP", "LAUNCH BASE", "MUSHROOM HILL",
+      "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
+};*/
+
 ByteArray convert_text_into_bytes(const std::string& string)
 {
     const std::vector<char> CONVERSION_TABLE = {
@@ -117,6 +143,21 @@ uint32_t inject_text_mappings(md::ROM& rom)
     }
 
     bytes.add_word(0xFFFF);
+    return rom.inject_bytes(bytes);
+}
+
+uint32_t inject_selection_mappings(md::ROM& rom)
+{
+    ByteArray bytes;
+    for(const auto& [selection_id, x, y, size] : SELECTION_MAPPINGS)
+    {
+        bytes.add_byte(selection_id);
+        bytes.add_byte(x);
+        bytes.add_byte(y);
+        bytes.add_byte(size);
+    }
+
+    bytes.add_byte(0xFF);
     return rom.inject_bytes(bytes);
 }
 
