@@ -38,6 +38,25 @@ ByteArray UiInfo::build_selection_mapping_bytes() const
     return bytes;
 }
 
+ByteArray UiInfo::build_palette_bytes() const
+{
+    std::vector<const Color*> colors = {
+            &_background_color,
+            &_text_color_palette_neutral.first, &_text_color_palette_neutral.second,
+            &_text_color_palette_selected.first, &_text_color_palette_selected.second
+    };
+
+    ByteArray bytes;
+    for(const Color* color : colors)
+    {
+        auto& [r, g, b] = *color;
+        uint16_t color_word = ((b & 0xF) << 8) + ((g & 0xF) << 4) + (r & 0xF);
+        bytes.add_word(color_word);
+    }
+
+    return bytes;
+}
+
 uint32_t UiInfo::inject_data(md::ROM& rom)
 {
     if(_main_table_addr)
@@ -56,6 +75,7 @@ uint32_t UiInfo::inject_data(md::ROM& rom)
     main_bytes_table.add_long(_on_c_pressed_addr);
     main_bytes_table.add_long(_on_a_pressed_addr);
     main_bytes_table.add_long(_on_start_pressed_addr);
+    main_bytes_table.add_bytes(build_palette_bytes());
 
     _main_table_addr = rom.inject_bytes(main_bytes_table);
     return _main_table_addr;

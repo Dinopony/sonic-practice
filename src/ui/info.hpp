@@ -1,17 +1,26 @@
 #pragma once
 
 #include <utility>
+#include <array>
 
 #include "../ui/string.hpp"
 
 namespace md { class ROM; }
+
+/// <selection_id, x, y, size>
 typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> UiSelectionMapping;
 
+/// <r, g, b>
+typedef std::tuple<uint8_t, uint8_t, uint8_t> Color;
 
 class UiInfo {
 private:
     std::vector<UiString> _strings;
     std::vector<UiSelectionMapping> _selection_mappings;
+
+    Color _background_color = {0x2,0x2,0x2};
+    std::pair<Color, Color> _text_color_palette_neutral = { {0x8,0x8,0x8}, {0xA,0xA,0xA} };
+    std::pair<Color, Color> _text_color_palette_selected = { {0xF,0xA,0x0}, {0xF,0xC,0x4} };
 
     uint32_t _preinit_function_addr = 0;
 
@@ -27,11 +36,12 @@ private:
     uint32_t _main_table_addr = 0;
 
 public:
-    static constexpr uint32_t STRINGS_OFFSET = 0x4 * 0;
-    static constexpr uint32_t STRING_POSITIONS_OFFSET = 0x4 * 1;
-    static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = 0x4 * 2;
-    static constexpr uint32_t PREINIT_FUNC_OFFSET = 0x4 * 3;
-    static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = 0x4 * 4;
+    static constexpr uint32_t STRINGS_OFFSET = 0;
+    static constexpr uint32_t STRING_POSITIONS_OFFSET = STRINGS_OFFSET + 0x4;
+    static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRING_POSITIONS_OFFSET + 0x4;
+    static constexpr uint32_t PREINIT_FUNC_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
+    static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = PREINIT_FUNC_OFFSET + 0x4;
+    static constexpr uint32_t COLOR_PALETTES_OFFSET = CONTROLLER_EVENTS_OFFSET + (0x4 * 8);
 
     UiInfo(std::vector<UiString> strings, std::vector<UiSelectionMapping> selection_mappings) :
         _strings            (std::move(strings)),
@@ -71,6 +81,15 @@ public:
     [[nodiscard]] uint32_t on_start_pressed() const { return _on_start_pressed_addr; }
     void on_start_pressed(uint32_t addr) { _on_start_pressed_addr = addr; }
 
+    [[nodiscard]] const Color& background_color() const { return _background_color; }
+    void background_color(const Color& color) { _background_color = color; }
+
+    [[nodiscard]] const std::pair<Color, Color>& text_color_palette_neutral() const { return _text_color_palette_neutral; }
+    void text_color_palette_neutral(const std::pair<Color, Color>& colors) { _text_color_palette_neutral = colors; }
+
+    [[nodiscard]] const std::pair<Color, Color>& text_color_palette_selected() const { return _text_color_palette_selected; }
+    void text_color_palette_selected(const std::pair<Color, Color>& colors) { _text_color_palette_selected = colors; }
+
     [[nodiscard]] uint32_t main_table_address() const {
         if(!_main_table_addr)
             throw std::exception();
@@ -81,4 +100,5 @@ private:
     [[nodiscard]] ByteArray build_string_bytes() const;
     [[nodiscard]] ByteArray build_string_position_bytes() const;
     [[nodiscard]] ByteArray build_selection_mapping_bytes() const;
+    [[nodiscard]] ByteArray build_palette_bytes() const;
 };

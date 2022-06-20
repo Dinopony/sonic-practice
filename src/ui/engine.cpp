@@ -273,12 +273,15 @@ uint32_t inject_func_boot_gui(md::ROM& rom)
     func_boot_gui.jsr(func_init_gui); // func_settings_menu.jmp(0x7B34);
     func_boot_gui.jsr(func_build_text_plane); // func_settings_menu.jmp(0x7BB2);
 
-    // Setup custom palette
-    func_boot_gui.movew(0x0222, addrw_(0xFC00));   // Background color
-    func_boot_gui.movew(0x0888, addrw_(0xFC0C));   // Neutral text color
-    func_boot_gui.movew(0x0AAA, addrw_(0xFC0E));   // Neutral text color highlight
-    func_boot_gui.movew(0x00AF, addrw_(0xFC2C));   // Selected text color
-    func_boot_gui.movew(0x04CF, addrw_(0xFC2E));   // Selected text color highlight
+    // Init palette
+    constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
+    func_boot_gui.lea(addr_(reg_A4, UiInfo::COLOR_PALETTES_OFFSET), reg_A1);
+    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR));
+    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xC));
+    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xE));
+    constexpr uint16_t PALETTE_1_ADDR = PALETTE_0_ADDR + 0x20;
+    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xC));
+    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xE));
 
 //    func_settings_menu.moveb(0x16, addr_(V_int_routine));
 //    func_settings_menu.jsr(Wait_VSync);
