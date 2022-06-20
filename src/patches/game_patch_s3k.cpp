@@ -43,11 +43,10 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
             UiString("MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,7}    ),
             UiString("LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", {1,9}    ),
             UiString("TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", {1,11}   ),
-            UiString("______________________________________", {1,13}   ),
             UiString("ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,15}   ),
             UiString("SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,17}   ),
-            UiString("______________________________________", {1,19}   ),
-            UiString("              * START *               ", {1,21}   )
+            UiString("______________________________________", {1,25}   ),
+            UiString("                     a PLAY    b BACK ", {1,26}   )
     };
 
     std::vector<UiSelectionMapping> selection_mappings = {
@@ -58,8 +57,7 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
             { 4, 1, 9,  38 },
             { 5, 1, 11, 38 },
             { 6, 1, 15, 38 },
-            { 7, 1, 17, 38 },
-            { 8, 1, 21, 38 }
+            { 7, 1, 17, 38 }
     };
 
     /*
