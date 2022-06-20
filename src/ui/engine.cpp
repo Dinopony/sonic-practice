@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "info.hpp"
 
 // TODO: It will be needed at some point to have some kind of "UiEngine" class that:
 //          - injects the UI core
@@ -27,45 +28,6 @@ constexpr uint32_t Level_select_repeat = 0xFFFFFF80;
 constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
 #include "../../assets/gui_tileset.bin.hxx"
-
-//////////////////////////////////////////////////////
-///     DATA INJECTION FOR WINDOW DESCRIPTORS
-//////////////////////////////////////////////////////
-
-uint32_t inject_text_strings(md::ROM& rom, const UiInfo& ui_info)
-{
-    ByteArray bytes;
-    for(const UiString& str : ui_info.strings())
-        bytes.add_bytes(str.text_bytes());
-
-    bytes.add_byte(0xFF);
-    return rom.inject_bytes(bytes);
-}
-
-uint32_t inject_text_mappings(md::ROM& rom, const UiInfo& ui_info)
-{
-    ByteArray bytes;
-    for(const UiString& str : ui_info.strings())
-        bytes.add_word(str.position_bytes());
-
-    bytes.add_word(0xFFFF);
-    return rom.inject_bytes(bytes);
-}
-
-uint32_t inject_selection_mappings(md::ROM& rom, const UiInfo& ui_info)
-{
-    ByteArray bytes;
-    for(const auto& [selection_id, x, y, size] : ui_info.selection_mappings())
-    {
-        bytes.add_byte(selection_id);
-        bytes.add_byte(x);
-        bytes.add_byte(y);
-        bytes.add_byte(size);
-    }
-
-    bytes.add_byte(0xFF);
-    return rom.inject_bytes(bytes);
-}
 
 //////////////////////////////////////////////////////
 ///     CODE INJECTION FOR UI ENGINE
@@ -104,16 +66,13 @@ uint32_t inject_func_init_gui(md::ROM& rom)
     return rom.inject_code(func_init_gui);
 }
 
-uint32_t inject_func_build_text_plane(md::ROM& rom, const UiInfo& ui_info)
+uint32_t inject_func_build_text_plane(md::ROM& rom)
 {
-    uint32_t text_strings_addr = inject_text_strings(rom, ui_info);
-    uint32_t text_mappings_addr = inject_text_mappings(rom, ui_info);
-
     md::Code func_build_text_plane;
 
     func_build_text_plane.lea(addr_(RAM_start), reg_A3);
-    func_build_text_plane.lea(addr_(text_strings_addr), reg_A1);
-    func_build_text_plane.lea(addr_(text_mappings_addr), reg_A5);
+    func_build_text_plane.movel(addr_(reg_A4, UiInfo::STRINGS_OFFSET), reg_A1);
+    func_build_text_plane.movel(addr_(reg_A4, UiInfo::STRING_POSITIONS_OFFSET), reg_A5);
     func_build_text_plane.moveq(0, reg_D0);
 
     // Double loop to write each letter of each line of text
@@ -145,48 +104,62 @@ uint32_t inject_func_build_text_plane(md::ROM& rom, const UiInfo& ui_info)
     return rom.inject_code(func_build_text_plane);
 }
 
-uint32_t inject_func_handle_gui_controls(md::ROM& rom, const UiInfo& ui_info)
+uint32_t inject_func_handle_gui_controls(md::ROM& rom)
 {
-    auto HANDLE_BUTTON_PRESS = [](md::Code& func, const std::string& button_name, uint8_t button_bit, uint32_t callback_addr)
+    auto HANDLE_BUTTON_PRESS = [](md::Code& func, const std::string& button_name, uint8_t button_bit)
     {
-        if(callback_addr)
-        {
-            func.btst(button_bit, reg_D1);
-            func.beq(button_name + "_not_pressed");
-            func.jsr(callback_addr);
-            func.movew(0x9, addrw_(Level_select_repeat));
-            func.rts();
-        }
-        func.label(button_name + "_not_pressed");
+        std::string end_label = button_name + "_end";
+
+        // If callback address is 0x0, it means this button is not handled, so no need to check it
+        func.cmpil(0x0, addr_(reg_A1));
+        func.beq(end_label);
+
+        // There is a valid callback, test the actual bit for this button
+        func.btst(button_bit, reg_D1);
+        func.beq(end_label);
+
+        // Button is pressed, call the callback function and set the repeat counter to prevent
+        // high-speed consecutive inputs
+        func.movel(addr_(reg_A1), reg_A2);
+        func.jsr(addr_(reg_A2));
+        func.moveb(0x9, addrw_(Level_select_repeat)); // TODO: Make the used address depend on UI engine config
+
+        func.label(end_label);
+        func.addql(0x4, reg_A1);
     };
 
     md::Code func_handle_gui_controls;
 
-    func_handle_gui_controls.movew(addrw_(Level_select_repeat), reg_D1);
+    // First of all, check if we didn't already press a button recently. If so, just leave.
+    func_handle_gui_controls.moveb(addrw_(Level_select_repeat), reg_D1);
     func_handle_gui_controls.beq("can_process_inputs");
-    func_handle_gui_controls.subqw(1, reg_D1);
-    func_handle_gui_controls.movew(reg_D1, addrw_(Level_select_repeat));
+    func_handle_gui_controls.subqb(1, reg_D1);
+    func_handle_gui_controls.moveb(reg_D1, addrw_(Level_select_repeat));
     func_handle_gui_controls.rts();
 
     func_handle_gui_controls.label("can_process_inputs");
+    // Make A1 point on the first controller event callback address
+    func_handle_gui_controls.lea(addr_(reg_A4, UiInfo::CONTROLLER_EVENTS_OFFSET), reg_A1);
+    // Make D1 contain the currently pressed button bits
     func_handle_gui_controls.moveb(addrw_(Ctrl_1), reg_D1);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "up",     0, ui_info.on_up_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "down",   1, ui_info.on_down_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "left",   2, ui_info.on_left_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "right",  3, ui_info.on_right_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "b",      4, ui_info.on_b_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "c",      5, ui_info.on_c_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "a",      6, ui_info.on_a_pressed());
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "start",  7, ui_info.on_start_pressed());
+
+    // Test consecutively each button, and call the appropriate callback if pressed
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "up",     0);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "down",   1);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "left",   2);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "right",  3);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "b",      4);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "c",      5);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "a",      6);
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "start",  7);
+
     func_handle_gui_controls.rts();
 
     return rom.inject_code(func_handle_gui_controls);
 }
 
-uint32_t inject_func_mark_fields(md::ROM& rom, const UiInfo& ui_info)
+uint32_t inject_func_mark_fields(md::ROM& rom)
 {
-    uint32_t selection_mappings_addr = inject_selection_mappings(rom, ui_info);
-
     md::Code func_change_palette;
 
     // Read X position beforehand, double it and store it in D2 to re-use it later
@@ -212,7 +185,7 @@ uint32_t inject_func_mark_fields(md::ROM& rom, const UiInfo& ui_info)
     func_change_palette.moveb(addr_(reg_A5, 0x1), reg_D0);
     func_change_palette.mulu(0x50, reg_D0);
     func_change_palette.addw(reg_D2, reg_D0);
-    func_change_palette.lea(addrw_(reg_A4, reg_D0), reg_A1);
+    func_change_palette.lea(addrw_(reg_A2, reg_D0), reg_A1);
 
     // Send the tile (A1) with palette ID (D3) on the VDP Data port (A6)
     func_change_palette.moveq(0, reg_D1);
@@ -230,8 +203,8 @@ uint32_t inject_func_mark_fields(md::ROM& rom, const UiInfo& ui_info)
     ////////////////
 
     md::Code func_mark_fields;
-    func_mark_fields.lea(addr_(RAM_start), reg_A4);
-    func_mark_fields.lea(addr_(selection_mappings_addr), reg_A5);
+    func_mark_fields.lea(addr_(RAM_start), reg_A2);
+    func_mark_fields.movel(addr_(reg_A4, UiInfo::SELECTION_MAPPINGS_OFFSET), reg_A5);
     func_mark_fields.lea(addr_(VDP_data_port), reg_A6);
     func_mark_fields.moveq(0, reg_D0);
     func_mark_fields.movew(addrw_(Level_select_option), reg_D0);
@@ -251,10 +224,10 @@ uint32_t inject_func_mark_fields(md::ROM& rom, const UiInfo& ui_info)
     return rom.inject_code(func_mark_fields);
 }
 
-uint32_t inject_func_gui_main_loop(md::ROM& rom, const UiInfo& ui_info)
+uint32_t inject_func_gui_main_loop(md::ROM& rom)
 {
-    uint32_t func_handle_gui_controls = inject_func_handle_gui_controls(rom, ui_info);
-    uint32_t func_mark_fields = inject_func_mark_fields(rom, ui_info);
+    uint32_t func_handle_gui_controls = inject_func_handle_gui_controls(rom);
+    uint32_t func_mark_fields = inject_func_mark_fields(rom);
 
     md::Code func_gui_main_loop;
     func_gui_main_loop.label("begin"); // routine running during level select
@@ -280,39 +253,41 @@ uint32_t inject_func_gui_main_loop(md::ROM& rom, const UiInfo& ui_info)
     func_gui_main_loop.bra("begin");
 
     return rom.inject_code(func_gui_main_loop);
-
 }
 
-uint32_t inject_gui(md::ROM& rom, const UiInfo& ui_info)
+uint32_t inject_func_boot_gui(md::ROM& rom)
 {
     uint32_t func_init_gui = inject_func_init_gui(rom);
-    uint32_t func_build_text_plane = inject_func_build_text_plane(rom, ui_info);
-    uint32_t func_gui_main_loop = inject_func_gui_main_loop(rom, ui_info);
+    uint32_t func_build_text_plane = inject_func_build_text_plane(rom);
+    uint32_t func_gui_main_loop = inject_func_gui_main_loop(rom);
 
-    md::Code func_settings_menu;
+    md::Code func_boot_gui;
 
     // Call the pre-init function if there is one
-    if(ui_info.preinit_function_addr())
-        func_settings_menu.jsr(ui_info.preinit_function_addr());
+    func_boot_gui.movel(addr_(reg_A4, UiInfo::PREINIT_FUNC_OFFSET), reg_A1);
+    func_boot_gui.cmpa(lval_(0x0), reg_A1);
+    func_boot_gui.beq("after_preinit");
+    func_boot_gui.jsr(addr_(reg_A1));
 
-    func_settings_menu.jsr(func_init_gui); // func_settings_menu.jmp(0x7B34);
-    func_settings_menu.jsr(func_build_text_plane); // func_settings_menu.jmp(0x7BB2);
+    func_boot_gui.label("after_preinit");
+    func_boot_gui.jsr(func_init_gui); // func_settings_menu.jmp(0x7B34);
+    func_boot_gui.jsr(func_build_text_plane); // func_settings_menu.jmp(0x7BB2);
 
     // Setup custom palette
-    func_settings_menu.movew(0x0222, addrw_(0xFC00));   // Background color
-    func_settings_menu.movew(0x0888, addrw_(0xFC0C));   // Neutral text color
-    func_settings_menu.movew(0x0AAA, addrw_(0xFC0E));   // Neutral text color highlight
-    func_settings_menu.movew(0x00AF, addrw_(0xFC2C));   // Selected text color
-    func_settings_menu.movew(0x04CF, addrw_(0xFC2E));   // Selected text color highlight
+    func_boot_gui.movew(0x0222, addrw_(0xFC00));   // Background color
+    func_boot_gui.movew(0x0888, addrw_(0xFC0C));   // Neutral text color
+    func_boot_gui.movew(0x0AAA, addrw_(0xFC0E));   // Neutral text color highlight
+    func_boot_gui.movew(0x00AF, addrw_(0xFC2C));   // Selected text color
+    func_boot_gui.movew(0x04CF, addrw_(0xFC2E));   // Selected text color highlight
 
 //    func_settings_menu.moveb(0x16, addr_(V_int_routine));
 //    func_settings_menu.jsr(Wait_VSync);
-    func_settings_menu.movew(addr_(VDP_reg_1_command), reg_D0);
-    func_settings_menu.orib(0x40, reg_D0);
-    func_settings_menu.movew(reg_D0, addr_(VDP_control_port));
+    func_boot_gui.movew(addr_(VDP_reg_1_command), reg_D0);
+    func_boot_gui.orib(0x40, reg_D0);
+    func_boot_gui.movew(reg_D0, addr_(VDP_control_port));
 
-    func_settings_menu.jsr(func_gui_main_loop);
-    func_settings_menu.rts();
+    func_boot_gui.jsr(func_gui_main_loop);
+    func_boot_gui.rts();
 
-    return rom.inject_code(func_settings_menu);
+    return rom.inject_code(func_boot_gui);
 }

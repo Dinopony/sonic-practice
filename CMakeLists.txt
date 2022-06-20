@@ -36,6 +36,7 @@ set(SOURCES
         src/ui/engine.hpp
         src/ui/engine.cpp
         src/ui/info.hpp
+        src/ui/info.cpp
         src/ui/string.hpp
         src/ui/string.cpp
 

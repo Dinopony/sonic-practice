@@ -43,10 +43,11 @@ Code& Code::bsr(uint16_t offset)
     return *this;
 }
 
-Code& Code::jsr(uint32_t address)
+Code& Code::jsr(const Param& target)
 {
-    this->add_opcode(0x4EB9);
-    this->add_long(address);
+    uint16_t opcode = 0x4E80 + target.getMXn();
+    this->add_opcode(opcode);
+    this->add_bytes(target.getAdditionnalData());
     return *this;
 }
 
@@ -55,13 +56,6 @@ Code& Code::jmp(const Param& target)
     uint16_t opcode = 0x4EC0 + target.getMXn();
     this->add_opcode(opcode);
     this->add_bytes(target.getAdditionnalData());
-    return *this;
-}
-
-Code& Code::jmp(uint32_t address)
-{
-    this->add_opcode(0x4EF9);
-    this->add_long(address);
     return *this;
 }
 

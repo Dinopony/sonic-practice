@@ -23,9 +23,10 @@ namespace md
         void add_opcode(uint16_t opcode);
 
         Code& bsr(uint16_t offset);
-        Code& jsr(uint32_t address);
+        Code& jsr(const Param& target);
+        Code& jsr(uint32_t address) { return this->jsr(addr_(address)); }
         Code& jmp(const Param& target);
-        Code& jmp(uint32_t address);
+        Code& jmp(uint32_t address) { return this->jmp(addr_(address)); }
 
         Code& cmp(const Param& value, const DataRegister& dx, Size size);
         Code& cmpb(const Param& value, const DataRegister& dx) { return this->cmp(value, dx, Size::BYTE); }
