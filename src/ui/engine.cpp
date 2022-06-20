@@ -8,8 +8,6 @@
 //        UiInfo then becomes a structure that contains a specific menu descriptor, but no redundant core code
 
 // ROM offsets that are only valid in S3K (i.e. functions that need to be ported over)
-constexpr uint32_t Wait_VSync = 0x1D18;
-constexpr uint32_t Plane_Map_To_VRAM = 0x14E6;
 constexpr uint32_t Clear_DisplayData = 0x11CA;
 
 // Global RAM offsets that are always valid
@@ -32,6 +30,73 @@ constexpr uint32_t Level_select_option = 0xFFFFFF82;
 uint32_t inject_func_nemesis_decomp(md::ROM& rom)
 {
     return rom.inject_bytes(NEM_DECOMP, NEM_DECOMP_SIZE);
+}
+
+uint32_t inject_func_wait_vsync(md::ROM& rom)
+{
+    md::Code func_wait_vsync;
+
+    func_wait_vsync.move_to_sr(0x2300);
+    func_wait_vsync.label("loop");
+    func_wait_vsync.tstb(addr_(V_int_routine));
+    func_wait_vsync.bne("loop"); // Wait until V-int's run
+    func_wait_vsync.rts();
+
+    return rom.inject_code(func_wait_vsync);
+}
+
+uint32_t inject_func_copy_plane_map_to_vram(md::ROM& rom)
+{
+    // Params:
+    //      - D0.w: VDP control word
+    //      - D1.b: tiles per row
+    //      - D2.b: number of rows to copy
+    md::Code func_copy_plane_map_to_vram;
+
+    func_copy_plane_map_to_vram.lea(addr_(RAM_start), reg_A1);
+    func_copy_plane_map_to_vram.movel(0x40000003, reg_D0);
+    func_copy_plane_map_to_vram.moveq(0x27, reg_D1);
+    func_copy_plane_map_to_vram.moveq(0x1B, reg_D2);
+
+    func_copy_plane_map_to_vram.lea(addr_(VDP_data_port), reg_A6);
+
+    func_copy_plane_map_to_vram.label("loop_row");
+    func_copy_plane_map_to_vram.movel(reg_D0, addr_(VDP_control_port));
+    func_copy_plane_map_to_vram.movew(reg_D1, reg_D3);
+
+    func_copy_plane_map_to_vram.label("loop_tile");
+    func_copy_plane_map_to_vram.movew(addr_postinc_(reg_A1), addr_(reg_A6));
+    func_copy_plane_map_to_vram.dbra(reg_D3, "loop_tile");   // copy one row
+
+    func_copy_plane_map_to_vram.addil(0x800000, reg_D0); // move onto next row
+    func_copy_plane_map_to_vram.dbra(reg_D2, "loop_row");
+    func_copy_plane_map_to_vram.rts();
+
+    return rom.inject_code(func_copy_plane_map_to_vram, "copy_plane_map_to_vram");
+}
+
+uint32_t inject_func_draw_string(md::ROM& rom)
+{
+    // Params:
+    //      - A1: string starting address
+    //      - A3: RAM graphics buffer start
+    //      - D3.w: string position
+    md::Code func_draw_string;
+
+    // Puts the exact RAM address where to write in A2
+    func_draw_string.lea(addrw_(reg_A3, reg_D3), reg_A2);
+    // Store the string size (first byte of the string) in D2
+    func_draw_string.moveq(0, reg_D2);
+    func_draw_string.moveb(addr_postinc_(reg_A1), reg_D2);
+
+    // Iterate D2 times to write each letter tile of the string into the RAM
+    func_draw_string.label("loop_write_letter");
+    func_draw_string.moveb(addr_postinc_(reg_A1), reg_D0);
+    func_draw_string.movew(reg_D0, addr_postinc_(reg_A2));
+    func_draw_string.dbra(reg_D2, "loop_write_letter");
+    func_draw_string.rts();
+
+    return rom.inject_code(func_draw_string);
 }
 
 //////////////////////////////////////////////////////
@@ -74,6 +139,9 @@ uint32_t inject_func_init_gui(md::ROM& rom)
 
 uint32_t inject_func_build_text_plane(md::ROM& rom)
 {
+    uint32_t func_copy_plane_map_to_vram = inject_func_copy_plane_map_to_vram(rom);
+    uint32_t func_draw_string = inject_func_draw_string(rom);
+
     md::Code func_build_text_plane;
 
     func_build_text_plane.lea(addr_(RAM_start), reg_A3);
@@ -82,28 +150,16 @@ uint32_t inject_func_build_text_plane(md::ROM& rom)
     func_build_text_plane.moveq(0, reg_D0);
 
     // Double loop to write each letter of each line of text
-    func_build_text_plane.label("loop_write_line");
+    func_build_text_plane.label("loop_write_string");
     func_build_text_plane.movew(addr_postinc_(reg_A5), reg_D3);
     func_build_text_plane.cmpiw(0xFFFF, reg_D3);
     func_build_text_plane.beq("complete");
-    func_build_text_plane.lea(addrw_(reg_A3, reg_D3), reg_A2);
-    func_build_text_plane.moveq(0, reg_D2);
-    func_build_text_plane.moveb(addr_postinc_(reg_A1), reg_D2);
-    func_build_text_plane.movew(reg_D2, reg_D3);
-
-    func_build_text_plane.label("loop_write_letter");
-    func_build_text_plane.moveb(addr_postinc_(reg_A1), reg_D0);
-    func_build_text_plane.movew(reg_D0, addr_postinc_(reg_A2));
-    func_build_text_plane.dbra(reg_D2, "loop_write_letter");
-    func_build_text_plane.bra("loop_write_line");
+    func_build_text_plane.jsr(func_draw_string);
+    func_build_text_plane.bra("loop_write_string");
 
     // Send our built plane map to VRAM
     func_build_text_plane.label("complete");
-    func_build_text_plane.lea(addr_(RAM_start), reg_A1);
-    func_build_text_plane.movel(0x40000003, reg_D0);
-    func_build_text_plane.moveq(0x27, reg_D1);
-    func_build_text_plane.moveq(0x1B, reg_D2);
-    func_build_text_plane.jsr(Plane_Map_To_VRAM);
+    func_build_text_plane.jsr(func_copy_plane_map_to_vram);
 
     func_build_text_plane.rts();
 
@@ -234,13 +290,14 @@ uint32_t inject_func_gui_main_loop(md::ROM& rom)
 {
     uint32_t func_handle_gui_controls = inject_func_handle_gui_controls(rom);
     uint32_t func_mark_fields = inject_func_mark_fields(rom);
+    uint32_t func_wait_vsync = inject_func_wait_vsync(rom);
 
     md::Code func_gui_main_loop;
     func_gui_main_loop.label("begin"); // routine running during level select
 
     // Wait for the frame to be drawn by the VDP before processing another one
     func_gui_main_loop.moveb(0x16, addr_(V_int_routine));
-    func_gui_main_loop.jsr(Wait_VSync);
+    func_gui_main_loop.jsr(func_wait_vsync);
     func_gui_main_loop.move_to_sr(0x2700);
 
     func_gui_main_loop.moveq(0, reg_D3); // Palette line 0
