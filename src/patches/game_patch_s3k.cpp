@@ -2,8 +2,6 @@
 #include "../ui/engine.hpp"
 #include "../ui/info.hpp"
 
-#include <iostream>
-
 void GamePatchS3K::mark_empty_chunks(md::ROM& rom)
 {
     // rom.mark_empty_chunk(0x95590, 0x96000);
@@ -159,25 +157,7 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
 
     uint32_t gui_info_addr = settings_ui.inject_data(rom);
     uint32_t func_boot_gui_addr = inject_func_boot_gui(rom);
-    std::cout << "gui_info_addr is at " << std::hex << gui_info_addr << std::endl;
-    std::cout << "func_boot_gui_addr is at " << std::hex << func_boot_gui_addr << std::endl;
-    // 1FF420 = Strings
-    // 3FFFCA = Positions
-    // 1FF5CE = Selection mappings
-    // 3FFF20 = Preinit
-    // 3FFFBA = Up
-    // 3FFFA6 = Down
-/*
-    000000000000000000000000000015FE000000000000FFFFFFFF70F40000FFFF000000090000424400
-    1FFFFF000020CD00
-    1FF624
-    FFFFE404FFFFE70000
-    1FF5F4
-    00C0000400
-    1FF8E2
-    1FFABE
-    04C4
-*/
+
     md::Code proc_launch_gui;
     proc_launch_gui.lea(addr_(gui_info_addr), reg_A4);
     proc_launch_gui.jmp(func_boot_gui_addr);
