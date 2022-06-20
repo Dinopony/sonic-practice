@@ -9,7 +9,7 @@ ByteArray UiString::text_bytes() const
             'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
             'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
             '+', '_', '%',
-            'a', 'n', 'b', 'w', 'e', 'c', 's', 'd'
+            'l', 'r', 'u', 'd', 'a', 'b', 'c', 's'
     };
 
     ByteArray output;
