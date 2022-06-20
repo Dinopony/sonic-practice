@@ -1,6 +1,11 @@
-#include "common_gui.h"
+#include "engine.hpp"
 
-// ROM offsets that are only valid in S3K
+// TODO: It will be needed at some point to have some kind of "UiEngine" class that:
+//          - injects the UI core
+//          - handles control engine using the appropriate RAM space for the game
+//        UiInfo then becomes a structure that contains a specific menu descriptor, but no redundant core code
+
+// ROM offsets that are only valid in S3K (i.e. functions that need to be ported over)
 constexpr uint32_t Wait_VSync = 0x1D18;
 constexpr uint32_t Plane_Map_To_VRAM = 0x14E6;
 constexpr uint32_t Nem_Decomp = 0x15BA;
@@ -22,6 +27,10 @@ constexpr uint32_t Level_select_repeat = 0xFFFFFF80;
 constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
 #include "../../assets/gui_tileset.bin.hxx"
+
+//////////////////////////////////////////////////////
+///     DATA INJECTION FOR WINDOW DESCRIPTORS
+//////////////////////////////////////////////////////
 
 uint32_t inject_text_strings(md::ROM& rom, const UiInfo& ui_info)
 {
@@ -57,6 +66,10 @@ uint32_t inject_selection_mappings(md::ROM& rom, const UiInfo& ui_info)
     bytes.add_byte(0xFF);
     return rom.inject_bytes(bytes);
 }
+
+//////////////////////////////////////////////////////
+///     CODE INJECTION FOR UI ENGINE
+//////////////////////////////////////////////////////
 
 uint32_t inject_func_init_gui(md::ROM& rom)
 {
@@ -134,47 +147,37 @@ uint32_t inject_func_build_text_plane(md::ROM& rom, const UiInfo& ui_info)
 
 uint32_t inject_func_handle_gui_controls(md::ROM& rom, const UiInfo& ui_info)
 {
+    auto HANDLE_BUTTON_PRESS = [](md::Code& func, const std::string& button_name, uint8_t button_bit, uint32_t callback_addr)
+    {
+        if(callback_addr)
+        {
+            func.btst(button_bit, reg_D1);
+            func.beq(button_name + "_not_pressed");
+            func.jsr(callback_addr);
+            func.movew(0x9, addrw_(Level_select_repeat));
+            func.rts();
+        }
+        func.label(button_name + "_not_pressed");
+    };
+
     md::Code func_handle_gui_controls;
-    constexpr uint8_t NUM_OPTIONS = 0x20;
 
-    func_handle_gui_controls.moveb(addrw_(Ctrl_1_pressed), reg_D1);
-    func_handle_gui_controls.andib(3, reg_D1);
-    func_handle_gui_controls.bne("vertical_direction_pressed"); // Up/Down pressed
+    func_handle_gui_controls.movew(addrw_(Level_select_repeat), reg_D1);
+    func_handle_gui_controls.beq("can_process_inputs");
+    func_handle_gui_controls.subqw(1, reg_D1);
+    func_handle_gui_controls.movew(reg_D1, addrw_(Level_select_repeat));
+    func_handle_gui_controls.rts();
 
-    func_handle_gui_controls.subqw(1, addrw_(Level_select_repeat));
-    func_handle_gui_controls.bpl("LevSelControls_CheckLR");
-
-    func_handle_gui_controls.label("vertical_direction_pressed");
-    func_handle_gui_controls.movew(0x9, addrw_(Level_select_repeat));
+    func_handle_gui_controls.label("can_process_inputs");
     func_handle_gui_controls.moveb(addrw_(Ctrl_1), reg_D1);
-    func_handle_gui_controls.andib(3, reg_D1);
-    func_handle_gui_controls.beq("LevSelControls_CheckLR"); // up/down not pressed, check for left & right
-
-    func_handle_gui_controls.movew(addrw_(Level_select_option), reg_D0);
-
-    // Test if up is pressed
-    func_handle_gui_controls.btst(0, reg_D1);
-    func_handle_gui_controls.beq("test_down");
-
-    // UP pressed : decrease selected option by one, looping to the end if needed
-    func_handle_gui_controls.subqw(1, reg_D0);
-    func_handle_gui_controls.bcc("test_down");
-    func_handle_gui_controls.moveq(ui_info.max_selection(), reg_D0);
-
-    // Test if down is pressed
-    func_handle_gui_controls.label("test_down");
-    func_handle_gui_controls.btst(1, reg_D1);
-    func_handle_gui_controls.beq("return");
-
-    // DOWN pressed : increase selected option by one, looping back to the first option if needed
-    func_handle_gui_controls.addqw(1, reg_D0); // yes, add 1
-    func_handle_gui_controls.cmpiw(ui_info.max_selection(), reg_D0);
-    func_handle_gui_controls.ble("return");
-    func_handle_gui_controls.moveq(0, reg_D0); // if not, set to 0
-
-    func_handle_gui_controls.label("return");
-    func_handle_gui_controls.movew(reg_D0, addrw_(Level_select_option));
-    func_handle_gui_controls.label("LevSelControls_CheckLR");
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "up",     0, ui_info.on_up_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "down",   1, ui_info.on_down_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "left",   2, ui_info.on_left_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "right",  3, ui_info.on_right_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "b",      4, ui_info.on_b_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "c",      5, ui_info.on_c_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "a",      6, ui_info.on_a_pressed());
+    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "start",  7, ui_info.on_start_pressed());
     func_handle_gui_controls.rts();
 
     return rom.inject_code(func_handle_gui_controls);
@@ -307,8 +310,6 @@ uint32_t inject_gui(md::ROM& rom, const UiInfo& ui_info)
     func_settings_menu.movew(addr_(VDP_reg_1_command), reg_D0);
     func_settings_menu.orib(0x40, reg_D0);
     func_settings_menu.movew(reg_D0, addr_(VDP_control_port));
-
-//    func_settings_menu.jsr(Pal_FadeFromBlack);
 
     func_settings_menu.jsr(func_gui_main_loop);
     func_settings_menu.rts();

@@ -1,4 +1,4 @@
-#include "ui_string.hpp"
+#include "string.hpp"
 
 ByteArray UiString::text_bytes() const
 {

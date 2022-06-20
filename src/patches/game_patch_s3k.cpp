@@ -1,5 +1,5 @@
 #include "game_patch_s3k.hpp"
-#include "common_gui.h"
+#include "../ui/engine.hpp"
 
 void GamePatchS3K::mark_empty_chunks(md::ROM& rom)
 {
@@ -74,12 +74,16 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
     };
      */
 
+    UiInfo settings_ui(strings, selection_mappings);
+
     //////////////////////////
 
     constexpr uint32_t Sprite_table_input = 0xFFFFAC00;
     constexpr uint32_t Object_RAM_Start = 0xFFFFB000;
     constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
     constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
+
+    constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
     md::Code func_s3k_preinit;
     // func_s3k_preinit.jsr(Pal_FadeToBlack);
@@ -122,12 +126,33 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
 
     func_s3k_preinit.rts();
 
-    uint32_t s3k_preinit_addr = rom.inject_code(func_s3k_preinit);
+    settings_ui.preinit_function_addr(rom.inject_code(func_s3k_preinit));
 
     //////////////////////////
 
-    UiInfo settings_ui(strings, selection_mappings);
-    settings_ui.preinit_function_addr(s3k_preinit_addr);
+    md::Code down_press_handler;
+    down_press_handler.movew(addrw_(Level_select_option), reg_D0);
+    down_press_handler.addqw(1, reg_D0);
+    down_press_handler.cmpiw(settings_ui.max_selection(), reg_D0);
+    down_press_handler.ble("commit_down");
+    down_press_handler.moveq(0, reg_D0);
+    down_press_handler.label("commit_down");
+    down_press_handler.movew(reg_D0, addrw_(Level_select_option));
+    down_press_handler.rts();
+    settings_ui.on_down_pressed(rom.inject_code(down_press_handler));
+
+    // Up pressed: decrease selected option by one, looping to the end if needed
+    md::Code up_press_handler;
+    up_press_handler.movew(addrw_(Level_select_option), reg_D0);
+    up_press_handler.subqw(1, reg_D0);
+    up_press_handler.bcc("commit_up");
+    up_press_handler.moveq(settings_ui.max_selection(), reg_D0);
+    up_press_handler.label("commit_up");
+    up_press_handler.movew(reg_D0, addrw_(Level_select_option));
+    up_press_handler.rts();
+    settings_ui.on_up_pressed(rom.inject_code(up_press_handler));
+
+    //////////////////////////
 
     rom.set_long(0x4C6, inject_gui(rom, settings_ui));
 
