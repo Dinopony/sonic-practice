@@ -152,6 +152,9 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
     settings_ui.on_up_pressed(rom.inject_code(up_press_handler));
 
     //////////////////////////
+    settings_ui.controller_ram_addr(0xFFFFF604);
+    settings_ui.input_repeat_ram_addr(0xFFFFFF80);
+    settings_ui.current_option_ram_addr(0xFFFFFF82);
 
     uint32_t gui_info_addr = settings_ui.inject_data(rom);
     uint32_t func_boot_gui_addr = inject_func_boot_gui(rom);

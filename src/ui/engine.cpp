@@ -7,8 +7,14 @@
 //          - handles control engine using the appropriate RAM space for the game
 //        UiInfo then becomes a structure that contains a specific menu descriptor, but no redundant core code
 
-// ROM offsets that are only valid in S3K (i.e. functions that need to be ported over)
-constexpr uint32_t Clear_DisplayData = 0x11CA;
+// TODO: Override Vint with a custom one that does whatever the current good behavior is,
+//       and then jumps to the regular Vint if UI is not enabled
+//       S3K executes VInt at FFF0 in RAM, leading to 0x584 (VInt function)
+//       - Change ROM header to execute a custom VInt
+//       - Custom VInt tests (UI_Mode).b.
+//              * If true, execute current minimum viable behavior (Poll inputs + VSync VDP stuff?)
+//              * If false, JMP to old address in VInt table
+//       - This should work for absolutely any game
 
 // Global RAM offsets that are always valid
 constexpr uint32_t RAM_start = 0xFFFF0000;
@@ -16,14 +22,7 @@ constexpr uint32_t VDP_data_port = 0xC00000;
 constexpr uint32_t VDP_control_port = 0xC00004;
 
 // RAM offsets that are most likely only valid in S3K
-constexpr uint32_t VDP_reg_1_command = 0xFFFFF60E;
-constexpr uint32_t DMA_queue = 0xFFFFFB00;
 constexpr uint32_t V_int_routine = 0xFFFFF62A;
-constexpr uint32_t DMA_queue_slot = 0xFFFFFBFC;
-constexpr uint32_t Ctrl_1 = 0xFFFFF604;
-constexpr uint32_t Ctrl_1_pressed = 0xFFFFF605;
-constexpr uint32_t Level_select_repeat = 0xFFFFFF80;
-constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
@@ -109,11 +108,11 @@ uint32_t inject_func_init_gui(md::ROM& rom)
     uint32_t func_nemesis_decomp = inject_func_nemesis_decomp(rom);
 
     md::Code func_init_gui;
-    func_init_gui.move_to_sr(0x2700);
-    func_init_gui.movew(addrw_(VDP_reg_1_command), reg_D0);
-    func_init_gui.andib(0xBF, reg_D0);
-    func_init_gui.movew(reg_D0, addr_(VDP_control_port));
-    func_init_gui.jsr(Clear_DisplayData);
+    func_init_gui.move_to_sr(0x2700); // Disable VInts
+//    func_init_gui.movew(addrw_(VDP_reg_1_command), reg_D0);  // 0xFFFFF60E
+//    func_init_gui.andib(0xBF, reg_D0);
+//    func_init_gui.movew(reg_D0, addr_(VDP_control_port));
+//    func_init_gui.jsr(Clear_DisplayData);     // 0x11CA
     func_init_gui.lea(addr_(VDP_control_port), reg_A6);
     func_init_gui.movew(0x8004, addr_(reg_A6));
     func_init_gui.movew(0x8230, addr_(reg_A6));
@@ -124,8 +123,8 @@ uint32_t inject_func_init_gui(md::ROM& rom)
     func_init_gui.movew(0x9001, addr_(reg_A6));
     func_init_gui.movew(0x8B00, addr_(reg_A6));
 
-    func_init_gui.clrw(addrw_(DMA_queue));
-    func_init_gui.movel(DMA_queue, addrw_(DMA_queue_slot));
+//    func_init_gui.clrw(addrw_(DMA_queue));  // 0xFFFFFB00
+//    func_init_gui.movel(DMA_queue, addrw_(DMA_queue_slot)); // 0xFFFFFBFC
     func_init_gui.movel(0x42000000, addr_(VDP_control_port));
 
     // Decompress GUI tileset
@@ -184,7 +183,7 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
         // high-speed consecutive inputs
         func.movel(addr_(reg_A1), reg_A2);
         func.jsr(addr_(reg_A2));
-        func.moveb(0x9, addrw_(Level_select_repeat)); // TODO: Make the used address depend on UI engine config
+        func.moveb(0x9, addr_(reg_A3));
 
         func.label(end_label);
         func.addql(0x4, reg_A1);
@@ -193,17 +192,19 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
     md::Code func_handle_gui_controls;
 
     // First of all, check if we didn't already press a button recently. If so, just leave.
-    func_handle_gui_controls.moveb(addrw_(Level_select_repeat), reg_D1);
+    func_handle_gui_controls.movel(addr_(reg_A4, UiInfo::INPUT_REPEAT_ADDR_OFFSET), reg_A3);
+    func_handle_gui_controls.moveb(addr_(reg_A3), reg_D1);
     func_handle_gui_controls.beq("can_process_inputs");
     func_handle_gui_controls.subqb(1, reg_D1);
-    func_handle_gui_controls.moveb(reg_D1, addrw_(Level_select_repeat));
+    func_handle_gui_controls.moveb(reg_D1, addr_(reg_A3));
     func_handle_gui_controls.rts();
 
     func_handle_gui_controls.label("can_process_inputs");
+    // Make D1 contain the currently pressed button bits
+    func_handle_gui_controls.movel(addr_(reg_A4, UiInfo::CONTROLLER_ADDR_OFFSET), reg_A1);
+    func_handle_gui_controls.moveb(addr_(reg_A1), reg_D1);
     // Make A1 point on the first controller event callback address
     func_handle_gui_controls.lea(addr_(reg_A4, UiInfo::CONTROLLER_EVENTS_OFFSET), reg_A1);
-    // Make D1 contain the currently pressed button bits
-    func_handle_gui_controls.moveb(addrw_(Ctrl_1), reg_D1);
 
     // Test consecutively each button, and call the appropriate callback if pressed
     HANDLE_BUTTON_PRESS(func_handle_gui_controls, "up",     0);
@@ -266,10 +267,13 @@ uint32_t inject_func_mark_fields(md::ROM& rom)
 
     md::Code func_mark_fields;
     func_mark_fields.lea(addr_(RAM_start), reg_A2);
+
+    func_mark_fields.movel(addr_(reg_A4, UiInfo::CURRENT_OPTION_ADDR_OFFSET), reg_A5);
+    func_mark_fields.moveq(0, reg_D0);
+    func_mark_fields.movew(addr_(reg_A5), reg_D0);
+
     func_mark_fields.movel(addr_(reg_A4, UiInfo::SELECTION_MAPPINGS_OFFSET), reg_A5);
     func_mark_fields.lea(addr_(VDP_data_port), reg_A6);
-    func_mark_fields.moveq(0, reg_D0);
-    func_mark_fields.movew(addrw_(Level_select_option), reg_D0);
 
     func_mark_fields.label("loop");
     func_mark_fields.cmpb(addr_postinc_(reg_A5), reg_D0);
@@ -296,9 +300,10 @@ uint32_t inject_func_gui_main_loop(md::ROM& rom)
     func_gui_main_loop.label("begin"); // routine running during level select
 
     // Wait for the frame to be drawn by the VDP before processing another one
+    func_gui_main_loop.move_to_sr(0x2300); // Enable VInts
     func_gui_main_loop.moveb(0x16, addr_(V_int_routine));
     func_gui_main_loop.jsr(func_wait_vsync);
-    func_gui_main_loop.move_to_sr(0x2700);
+    func_gui_main_loop.move_to_sr(0x2700); // Disable VInts
 
     func_gui_main_loop.moveq(0, reg_D3); // Palette line 0
     func_gui_main_loop.jsr(func_mark_fields); // 0x7F62
@@ -308,7 +313,6 @@ uint32_t inject_func_gui_main_loop(md::ROM& rom)
     func_gui_main_loop.movew(0x2000, reg_D3); // Palette line 1
     func_gui_main_loop.jsr(func_mark_fields); // 0x7F62
 
-    func_gui_main_loop.move_to_sr(0x2300);
 //    func_settings_menu.moveb(addr_(0xF605), reg_D0); // CTRL_1_PRESSED
 //    func_settings_menu.orb(addr_(0xF607), reg_D0); // CTRL_2_PRESSED
 //    func_settings_menu.andib(0x80, reg_D0);
@@ -348,7 +352,7 @@ uint32_t inject_func_boot_gui(md::ROM& rom)
 
 //    func_settings_menu.moveb(0x16, addr_(V_int_routine));
 //    func_settings_menu.jsr(Wait_VSync);
-    func_boot_gui.movew(addr_(VDP_reg_1_command), reg_D0);
+    func_boot_gui.movew(0x8134/*addr_(VDP_reg_1_command)*/, reg_D0);
     func_boot_gui.orib(0x40, reg_D0);
     func_boot_gui.movew(reg_D0, addr_(VDP_control_port));
 

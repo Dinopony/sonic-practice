@@ -22,6 +22,10 @@ private:
     std::pair<Color, Color> _text_color_palette_neutral = { {0x8,0x8,0x8}, {0xA,0xA,0xA} };
     std::pair<Color, Color> _text_color_palette_selected = { {0xF,0xA,0x0}, {0xF,0xC,0x4} };
 
+    uint32_t _controller_ram_addr = 0xFFFF0000; ///< the RAM address where the controller state is stored (byte)
+    uint32_t _current_option_ram_addr = 0xFFFF0001; ///< the RAM address where the currently selected option is stored (byte)
+    uint32_t _input_repeat_ram_addr = 0xFFFF0002; ///< the RAM address where the input repeat frame counter is located (byte)
+
     uint32_t _preinit_function_addr = 0;
 
     uint32_t _on_down_pressed_addr = 0;
@@ -39,7 +43,10 @@ public:
     static constexpr uint32_t STRINGS_OFFSET = 0;
     static constexpr uint32_t STRING_POSITIONS_OFFSET = STRINGS_OFFSET + 0x4;
     static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRING_POSITIONS_OFFSET + 0x4;
-    static constexpr uint32_t PREINIT_FUNC_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
+    static constexpr uint16_t CONTROLLER_ADDR_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
+    static constexpr uint16_t CURRENT_OPTION_ADDR_OFFSET = CONTROLLER_ADDR_OFFSET + 0x4;
+    static constexpr uint16_t INPUT_REPEAT_ADDR_OFFSET = CURRENT_OPTION_ADDR_OFFSET + 0x4;
+    static constexpr uint32_t PREINIT_FUNC_OFFSET = INPUT_REPEAT_ADDR_OFFSET + 0x4;
     static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = PREINIT_FUNC_OFFSET + 0x4;
     static constexpr uint32_t COLOR_PALETTES_OFFSET = CONTROLLER_EVENTS_OFFSET + (0x4 * 8);
 
@@ -53,6 +60,15 @@ public:
     [[nodiscard]] const std::vector<UiString>& strings() const { return _strings; }
     [[nodiscard]] const std::vector<UiSelectionMapping>& selection_mappings() const { return _selection_mappings; }
     [[nodiscard]] uint8_t max_selection() const;
+
+    [[nodiscard]] uint32_t controller_ram_addr() const { return _controller_ram_addr; }
+    void controller_ram_addr(uint32_t addr) { _controller_ram_addr = addr; }
+
+    [[nodiscard]] uint32_t current_option_ram_addr() const { return _current_option_ram_addr; }
+    void current_option_ram_addr(uint32_t addr) { _current_option_ram_addr = addr; }
+
+    [[nodiscard]] uint32_t input_repeat_ram_addr() const { return _input_repeat_ram_addr; }
+    void input_repeat_ram_addr(uint32_t addr) { _input_repeat_ram_addr = addr; }
 
     [[nodiscard]] uint32_t preinit_function_addr() const { return _preinit_function_addr; }
     void preinit_function_addr(uint32_t addr) { _preinit_function_addr = addr; }

@@ -66,7 +66,13 @@ uint32_t UiInfo::inject_data(md::ROM& rom)
     main_bytes_table.add_long(rom.inject_bytes(build_string_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_string_position_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_selection_mapping_bytes()));
+
+    main_bytes_table.add_long(_controller_ram_addr);
+    main_bytes_table.add_long(_current_option_ram_addr);
+    main_bytes_table.add_long(_input_repeat_ram_addr);
+
     main_bytes_table.add_long(_preinit_function_addr);
+
     main_bytes_table.add_long(_on_up_pressed_addr);
     main_bytes_table.add_long(_on_down_pressed_addr);
     main_bytes_table.add_long(_on_left_pressed_addr);
