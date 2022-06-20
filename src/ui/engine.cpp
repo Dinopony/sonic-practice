@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "info.hpp"
+#include "../../assets/nem_decomp.bin.hxx"
 
 // TODO: It will be needed at some point to have some kind of "UiEngine" class that:
 //          - injects the UI core
@@ -9,7 +10,6 @@
 // ROM offsets that are only valid in S3K (i.e. functions that need to be ported over)
 constexpr uint32_t Wait_VSync = 0x1D18;
 constexpr uint32_t Plane_Map_To_VRAM = 0x14E6;
-constexpr uint32_t Nem_Decomp = 0x15BA;
 constexpr uint32_t Clear_DisplayData = 0x11CA;
 
 // Global RAM offsets that are always valid
@@ -29,6 +29,11 @@ constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
+uint32_t inject_func_nemesis_decomp(md::ROM& rom)
+{
+    return rom.inject_bytes(NEM_DECOMP, NEM_DECOMP_SIZE);
+}
+
 //////////////////////////////////////////////////////
 ///     CODE INJECTION FOR UI ENGINE
 //////////////////////////////////////////////////////
@@ -36,6 +41,7 @@ constexpr uint32_t Level_select_option = 0xFFFFFF82;
 uint32_t inject_func_init_gui(md::ROM& rom)
 {
     uint32_t gui_tileset_addr = rom.inject_bytes(GUI_TILESET, GUI_TILESET_SIZE);
+    uint32_t func_nemesis_decomp = inject_func_nemesis_decomp(rom);
 
     md::Code func_init_gui;
     func_init_gui.move_to_sr(0x2700);
@@ -59,7 +65,7 @@ uint32_t inject_func_init_gui(md::ROM& rom)
 
     // Decompress GUI tileset
     func_init_gui.lea(addr_(gui_tileset_addr), reg_A0);
-    func_init_gui.jsr(Nem_Decomp);
+    func_init_gui.jsr(func_nemesis_decomp);
 
     func_init_gui.rts();
 

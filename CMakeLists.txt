@@ -20,9 +20,11 @@ macro(WRAPPED_DEPENDENCY)
 endmacro()
 
 wrapped_dependency(RAW "assets/gui_tileset.bin" GUI_TILESET)
+wrapped_dependency(RAW "assets/nem_decomp.bin" NEM_DECOMP)
 
 set(SOURCES
         assets/gui_tileset.bin.hxx
+        assets/nem_decomp.bin.hxx
 
         # --- Megadrive Tools ----------------------------------------
         src/md_tools/code.cpp
