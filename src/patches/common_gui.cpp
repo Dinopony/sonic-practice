@@ -1,12 +1,5 @@
 #include "common_gui.h"
 
-// TODO:
-// - Mark fields look at first byte to check if selected option == byte
-// - Several mappings can concern the same option, to allow for primary / secondaries and even more
-//      - Therefore, loop must not stop as soon as we found one
-// - Also introduce a "size" to mention the number of consecutive tiles to mark
-
-
 // ROM offsets that are only valid in S3K
 constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
 constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
@@ -32,122 +25,31 @@ constexpr uint32_t Level_select_repeat = 0xFFFFFF80;
 constexpr uint32_t Level_select_option = 0xFFFFFF82;
 
 #include "../../assets/gui_tileset.bin.hxx"
-#include "../tools/byte_array.hpp"
 
-const std::vector<std::string> TEXT_ENTRIES = {
-        "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "REDUCE BOSSES HITCOUNT %%%%%%%%%%%%%%%",
-        "TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%",
-        "______________________________________",
-        "ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
-        "______________________________________",
-        "              * START *               "
-};
-
-const std::vector<std::pair<uint8_t, uint8_t>> TEXT_MAPPINGS = {
-        { 1, 1 },
-        { 1, 3 },
-        { 1, 5 },
-        { 1, 7 },
-        { 1, 9 },
-        { 1, 11 },
-        { 1, 13 },
-        { 1, 15 },
-        { 1, 17 },
-        { 1, 19 },
-        { 1, 21 }
-};
-
-typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
-const std::vector<SelectionMapping> SELECTION_MAPPINGS = {
-        { 0, 1, 1,  38 },
-        { 1, 1, 3,  38 },
-        { 2, 1, 5,  38 },
-        { 3, 1, 7,  38 },
-        { 4, 1, 9,  38 },
-        { 5, 1, 11, 38 },
-        { 6, 1, 15, 38 },
-        { 7, 1, 17, 38 },
-        { 8, 1, 21, 38 }
-};
-/*
-const std::vector<std::vector<std::string>> SELECTION_OPTIONS = {
-    { "SONIC AND TAILS", "SONIC", "TAILS", "KNUCKLES" },
-    { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14" },
-    { "NONE", "LIGHTNING", "FIRE", "WATER" },
-    { "ENABLED", "DISABLED" },
-    { "YES", "NO" },
-    { "ENABLED", "DISABLED" },
-    { "ANGEL ISLAND", "HYDROCITY", "MARBLE GARDEN", "CARNIVAL NIGHT", "ICECAP", "LAUNCH BASE", "MUSHROOM HILL",
-      "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
-};*/
-
-ByteArray convert_text_into_bytes(const std::string& string)
-{
-    const std::vector<char> CONVERSION_TABLE = {
-            ' ',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '*', '@', ':', '.',
-            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-            '+', '_', '%',
-            'a', 'n', 'b', 'w', 'e', 'c', 's', 'd'
-    };
-
-    ByteArray output;
-
-    for(char char_in_string : string)
-    {
-        for(size_t i=0 ; i<CONVERSION_TABLE.size() ; ++i)
-        {
-            if(CONVERSION_TABLE[i] == char_in_string)
-            {
-                output.add_byte(i + 0x0F);
-                break;
-            }
-        }
-    }
-
-    uint8_t string_length = static_cast<uint8_t>(output.size()-1);
-    output.insert(output.begin(), string_length);
-
-    return output;
-}
-
-uint32_t inject_text_strings(md::ROM& rom)
+uint32_t inject_text_strings(md::ROM& rom, const UiInfo& ui_info)
 {
     ByteArray bytes;
-    for(const std::string& str : TEXT_ENTRIES)
-    {
-        ByteArray string_bytes = convert_text_into_bytes(str);
-        bytes.add_bytes(string_bytes);
-    }
+    for(const UiString& str : ui_info.strings())
+        bytes.add_bytes(str.text_bytes());
 
     bytes.add_byte(0xFF);
     return rom.inject_bytes(bytes);
 }
 
-uint32_t inject_text_mappings(md::ROM& rom)
+uint32_t inject_text_mappings(md::ROM& rom, const UiInfo& ui_info)
 {
     ByteArray bytes;
-    for(const auto& [x, y] : TEXT_MAPPINGS)
-    {
-        uint16_t position_word = (x * 2) + (0x50 * y);
-        bytes.add_word(position_word);
-    }
+    for(const UiString& str : ui_info.strings())
+        bytes.add_word(str.position_bytes());
 
     bytes.add_word(0xFFFF);
     return rom.inject_bytes(bytes);
 }
 
-uint32_t inject_selection_mappings(md::ROM& rom)
+uint32_t inject_selection_mappings(md::ROM& rom, const UiInfo& ui_info)
 {
     ByteArray bytes;
-    for(const auto& [selection_id, x, y, size] : SELECTION_MAPPINGS)
+    for(const auto& [selection_id, x, y, size] : ui_info.selection_mappings())
     {
         bytes.add_byte(selection_id);
         bytes.add_byte(x);
@@ -240,10 +142,10 @@ uint32_t inject_func_init_gui(md::ROM& rom)
     return rom.inject_code(func_init_gui);
 }
 
-uint32_t inject_func_build_text_plane(md::ROM& rom)
+uint32_t inject_func_build_text_plane(md::ROM& rom, const UiInfo& ui_info)
 {
-    uint32_t text_strings_addr = inject_text_strings(rom);
-    uint32_t text_mappings_addr = inject_text_mappings(rom);
+    uint32_t text_strings_addr = inject_text_strings(rom, ui_info);
+    uint32_t text_mappings_addr = inject_text_mappings(rom, ui_info);
 
     md::Code func_build_text_plane;
 
@@ -281,7 +183,7 @@ uint32_t inject_func_build_text_plane(md::ROM& rom)
     return rom.inject_code(func_build_text_plane);
 }
 
-uint32_t inject_func_handle_gui_controls(md::ROM& rom)
+uint32_t inject_func_handle_gui_controls(md::ROM& rom, const UiInfo& ui_info)
 {
     md::Code func_handle_gui_controls;
     constexpr uint8_t NUM_OPTIONS = 0x20;
@@ -308,7 +210,7 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
     // UP pressed : decrease selected option by one, looping to the end if needed
     func_handle_gui_controls.subqw(1, reg_D0);
     func_handle_gui_controls.bcc("test_down");
-    func_handle_gui_controls.moveq(SELECTION_MAPPINGS.size()-1, reg_D0);
+    func_handle_gui_controls.moveq(ui_info.max_selection(), reg_D0);
 
     // Test if down is pressed
     func_handle_gui_controls.label("test_down");
@@ -317,7 +219,7 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
 
     // DOWN pressed : increase selected option by one, looping back to the first option if needed
     func_handle_gui_controls.addqw(1, reg_D0); // yes, add 1
-    func_handle_gui_controls.cmpiw(SELECTION_MAPPINGS.size()-1, reg_D0);
+    func_handle_gui_controls.cmpiw(ui_info.max_selection(), reg_D0);
     func_handle_gui_controls.ble("return");
     func_handle_gui_controls.moveq(0, reg_D0); // if not, set to 0
 
@@ -329,9 +231,9 @@ uint32_t inject_func_handle_gui_controls(md::ROM& rom)
     return rom.inject_code(func_handle_gui_controls);
 }
 
-uint32_t inject_func_mark_fields(md::ROM& rom)
+uint32_t inject_func_mark_fields(md::ROM& rom, const UiInfo& ui_info)
 {
-    uint32_t selection_mappings_addr = inject_selection_mappings(rom);
+    uint32_t selection_mappings_addr = inject_selection_mappings(rom, ui_info);
 
     md::Code func_change_palette;
 
@@ -397,13 +299,15 @@ uint32_t inject_func_mark_fields(md::ROM& rom)
     return rom.inject_code(func_mark_fields);
 }
 
-uint32_t inject_func_gui_main_loop(md::ROM& rom)
+uint32_t inject_func_gui_main_loop(md::ROM& rom, const UiInfo& ui_info)
 {
-    uint32_t func_handle_gui_controls = inject_func_handle_gui_controls(rom);
-    uint32_t func_mark_fields = inject_func_mark_fields(rom);
+    uint32_t func_handle_gui_controls = inject_func_handle_gui_controls(rom, ui_info);
+    uint32_t func_mark_fields = inject_func_mark_fields(rom, ui_info);
 
     md::Code func_gui_main_loop;
     func_gui_main_loop.label("begin"); // routine running during level select
+
+    // Wait for the frame to be drawn by the VDP before processing another one
     func_gui_main_loop.moveb(0x16, addr_(V_int_routine));
     func_gui_main_loop.jsr(Wait_VSync);
     func_gui_main_loop.move_to_sr(0x2700);
@@ -427,15 +331,14 @@ uint32_t inject_func_gui_main_loop(md::ROM& rom)
 
 }
 
-uint32_t inject_gui(md::ROM& rom)
+uint32_t inject_gui(md::ROM& rom, const UiInfo& ui_info)
 {
     uint32_t func_s3k_preinit = inject_s3k_preinit(rom);
     uint32_t func_init_gui = inject_func_init_gui(rom);
-    uint32_t func_build_text_plane = inject_func_build_text_plane(rom);
-    uint32_t func_gui_main_loop = inject_func_gui_main_loop(rom);
+    uint32_t func_build_text_plane = inject_func_build_text_plane(rom, ui_info);
+    uint32_t func_gui_main_loop = inject_func_gui_main_loop(rom, ui_info);
 
     md::Code func_settings_menu;
-//    func_settings_menu.jsr(Pal_FadeToBlack);
 
     func_settings_menu.jsr(func_s3k_preinit);
     func_settings_menu.jsr(func_init_gui); // func_settings_menu.jmp(0x7B34);

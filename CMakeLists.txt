@@ -47,6 +47,6 @@ set(SOURCES
 
         # --- Project root ----------------------------------------
         "src/main.cpp"
-        src/patches/game_patch_s3k.hpp src/patches/common_gui.cpp src/patches/common_gui.h)
+        src/patches/game_patch_s3k.hpp src/patches/common_gui.cpp src/patches/common_gui.h src/ui/ui_string.hpp src/ui/ui_string.cpp src/ui/ui_info.hpp)
 
 add_executable(sonic_practice "${SOURCES}")
