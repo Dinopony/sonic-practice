@@ -10,6 +10,7 @@ class UiInfo {
 private:
     std::vector<UiString> _strings;
     std::vector<UiSelectionMapping> _selection_mappings;
+    uint32_t _preinit_function_addr = 0;
 
 public:
     UiInfo(std::vector<UiString> strings, std::vector<UiSelectionMapping> selection_mappings) :
@@ -27,4 +28,7 @@ public:
                 highest_sel = sel;
         return highest_sel;
     }
+
+    [[nodiscard]] uint32_t preinit_function_addr() const { return _preinit_function_addr; }
+    void preinit_function_addr(uint32_t addr) { _preinit_function_addr = addr; }
 };

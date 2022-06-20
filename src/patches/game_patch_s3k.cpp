@@ -73,7 +73,61 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
           "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
     };
      */
+
+    //////////////////////////
+
+    constexpr uint32_t Sprite_table_input = 0xFFFFAC00;
+    constexpr uint32_t Object_RAM_Start = 0xFFFFB000;
+    constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
+    constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
+
+    md::Code func_s3k_preinit;
+    // func_s3k_preinit.jsr(Pal_FadeToBlack);
+
+    // Clear sprite table
+    func_s3k_preinit.lea(addrw_(Sprite_table_input), reg_A1);
+    func_s3k_preinit.moveq(0x0, reg_D0);
+    func_s3k_preinit.movew(0x00FF, reg_D1);
+    func_s3k_preinit.label("loop1");
+    func_s3k_preinit.movel(reg_D0, addr_postinc_(reg_A1));
+    func_s3k_preinit.dbra(reg_D1, "loop1");
+
+    // Clear object RAM
+    func_s3k_preinit.lea(addrw_(Object_RAM_Start), reg_A1);
+    func_s3k_preinit.moveq(0, reg_D0);
+    func_s3k_preinit.movew(0x7FF, reg_D1);
+    func_s3k_preinit.label("loop_clear_object_ram");
+    func_s3k_preinit.movel(reg_D0, addr_postinc_(reg_A1));
+    func_s3k_preinit.dbra(reg_D1, "loop_clear_object_ram");
+
+    func_s3k_preinit.clrw(addr_(0xFF08)); // Player Mode
+    func_s3k_preinit.clrw(addr_(0xFF02)); // Results screen 2P
+    func_s3k_preinit.clrb(addr_(0xF711)); // Level Started Flag
+    func_s3k_preinit.clrw(addr_(0xF7F0)); // Anim Counters
+    func_s3k_preinit.movew(0x707, addr_(0xF614)); // Demo timer
+    func_s3k_preinit.clrw(addr_(0xFFE8)); // Competition mode
+    func_s3k_preinit.clrl(addr_(0xEE78)); // Camera X pos
+    func_s3k_preinit.clrl(addr_(0xEE7C)); // Camera Y pos
+    func_s3k_preinit.clrl(addr_(0xE660)); // Save pointer
+    func_s3k_preinit.clrl(addr_(0xFF92)); // Collected special ring array
+    func_s3k_preinit.clrb(addr_(0xFE2A)); // Last star post hit
+    func_s3k_preinit.clrb(addr_(0xFE48)); // Special bonus entry flag
+    func_s3k_preinit.clrb(addr_(0xFFD4)); // Blue spheres stage flag
+
+    func_s3k_preinit.clrw(addr_(0xFFE4)); // Level_select_cheat_counter
+    func_s3k_preinit.clrw(addr_(0xFFE6)); // Debug_mode_cheat_counter
+
+    func_s3k_preinit.moveq(0x23, reg_D0);
+    func_s3k_preinit.jsr(0x1358); // PlayMusic
+
+    func_s3k_preinit.rts();
+
+    uint32_t s3k_preinit_addr = rom.inject_code(func_s3k_preinit);
+
+    //////////////////////////
+
     UiInfo settings_ui(strings, selection_mappings);
+    settings_ui.preinit_function_addr(s3k_preinit_addr);
 
     rom.set_long(0x4C6, inject_gui(rom, settings_ui));
 
