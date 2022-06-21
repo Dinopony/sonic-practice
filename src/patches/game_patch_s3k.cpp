@@ -76,8 +76,8 @@ static uint32_t inject_func_preinit_s3k(md::ROM& rom)
     func_s3k_preinit.clrw(addr_(0xFFE4)); // Level_select_cheat_counter
     func_s3k_preinit.clrw(addr_(0xFFE6)); // Debug_mode_cheat_counter
 
-//    func_s3k_preinit.moveq(0x23, reg_D0);
-//    func_s3k_preinit.jsr(0x1358); // PlayMusic
+    func_s3k_preinit.moveq(0x23, reg_D0);
+    func_s3k_preinit.jsr(0x1358); // PlayMusic
 
     func_s3k_preinit.rts();
 

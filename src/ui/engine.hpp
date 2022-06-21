@@ -31,18 +31,18 @@ public:
     uint32_t inject(md::ROM& rom);
 
 private:
-    uint32_t inject_func_nemesis_decomp(md::ROM& rom);
-    uint32_t inject_func_wait_vsync(md::ROM& rom);
-    uint32_t inject_func_copy_plane_map_to_vram(md::ROM& rom);
-    uint32_t inject_func_draw_string(md::ROM& rom);
-    uint32_t inject_func_poll_controller(md::ROM& rom);
-    uint32_t inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler);
-    uint32_t inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp);
-    uint32_t inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_map_to_vram, uint32_t draw_string);
-    uint32_t inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_controller);
-    uint32_t inject_func_mark_fields(md::ROM& rom);
-    uint32_t inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_controls, uint32_t mark_fields, uint32_t wait_vsync);
-    uint32_t inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t build_text_plane, uint32_t ui_main_loop);
+    uint32_t inject_func_nemesis_decomp(md::ROM& rom) const;
+    uint32_t inject_func_wait_vsync(md::ROM& rom) const;
+    uint32_t inject_func_copy_plane_map_to_vram(md::ROM& rom) const;
+    uint32_t inject_func_draw_string(md::ROM& rom) const;
+    uint32_t inject_func_poll_controller(md::ROM& rom) const;
+    uint32_t inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler) const;
+    uint32_t inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp) const;
+    uint32_t inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_map_to_vram, uint32_t draw_string) const;
+    uint32_t inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_controller) const;
+    uint32_t inject_func_mark_fields(md::ROM& rom) const;
+    uint32_t inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_controls, uint32_t mark_fields, uint32_t wait_vsync) const;
+    uint32_t inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t build_text_plane, uint32_t ui_main_loop) const;
 };
 
 } // namespace end

@@ -23,12 +23,11 @@ constexpr uint32_t RAM_start = 0xFFFF0000;
 constexpr uint32_t VDP_data_port = 0xC00000;
 constexpr uint32_t VDP_control_port = 0xC00004;
 constexpr uint32_t Controller_1_data_port = 0xA10002;
+constexpr uint32_t Z80_bus_request = 0xA11100;
 
 constexpr uint8_t UI_MODE_DISABLED = 0x0;
 constexpr uint8_t UI_MODE_ENABLED = 0x1;
 constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
-
-constexpr uint32_t V_int_routine = 0xFFFFF62A;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
@@ -56,12 +55,12 @@ uint32_t Engine::inject(md::ROM& rom)
     return _func_boot_ui;
 }
 
-uint32_t Engine::inject_func_nemesis_decomp(md::ROM& rom)
+uint32_t Engine::inject_func_nemesis_decomp(md::ROM& rom) const
 {
     return rom.inject_bytes(NEM_DECOMP, NEM_DECOMP_SIZE);
 }
 
-uint32_t Engine::inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler)
+uint32_t Engine::inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler) const
 {
     md::Code func_v_int;
 
@@ -69,52 +68,62 @@ uint32_t Engine::inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler)
     func_v_int.tstb(addr_(_ui_mode_ram_addr));
     func_v_int.beq("fallback_to_old_vint"); // If UI Mode == 0, jump to the usual VInt for this game
 
+    func_v_int.movem_to_stack({ reg_D0_D7 }, { reg_A0_A6 });
     func_v_int.label("wait_for_vertical_blanking");
     func_v_int.movew(addr_(VDP_control_port), reg_D0);
     func_v_int.andiw(0x8, reg_D0);
     func_v_int.beq("wait_for_vertical_blanking");
 
+    // If PAL system, wait a bit
+//    func_v_int.btst(0x6, addrw_(0xFFD8)); // Graphics_flags
+//    func_v_int.beq("ntsc_system");
+//    func_v_int.movew(0x700, reg_D0);
+//    func_v_int.label("pal_wait_loop");
+//    func_v_int.dbra(reg_D0, "pal_wait_loop");
+//    func_v_int.label("ntsc_system");
+
+    // Stop Z80
+//    func_v_int.movew(0x100, addr_(Z80_bus_request));
+//    func_v_int.label("wait_z80_stop");
+//    func_v_int.btst(0x0, addr_(Z80_bus_request));
+//    func_v_int.bne("wait_z80_stop");
+
+    func_v_int.jsr(0x10DE); // pollControllers
+
+    // dma68kToVDP 0xFC00 (Palette),$0000,$80,CRAM
+    func_v_int.lea(addr_(VDP_control_port), reg_A5);
+    func_v_int.movel(0x94009340, addr_(reg_A5));
+    func_v_int.movel(0x96FE9500, addr_(reg_A5));
+    func_v_int.movew(0x977F, addr_(reg_A5));
+    func_v_int.movew(0xC000, addr_(reg_A5));
+    func_v_int.movew(0x80, addrw_(0xF640));
+    func_v_int.movew(addrw_(0xF640), addr_(reg_A5));
+
+    // dma68kToVDP 0xF800 (Sprite_table_buffer),$F800,$280,VRAM
+    func_v_int.lea(addr_(VDP_control_port), reg_A5);
+    func_v_int.movel(0x94019340, addr_(reg_A5));
+    func_v_int.movel(0x96FC9500, addr_(reg_A5));
+    func_v_int.movew(0x977F, addr_(reg_A5));
+    func_v_int.movew(0x7800, addr_(reg_A5));
+    func_v_int.movew(0x83, addrw_(0xF640));
+    func_v_int.movew(addrw_(0xF640), addr_(reg_A5));
+
+//    func_v_int.jsr(0x1588); // Process_DMA_Queue
+
+    // Start Z80
+//    func_v_int.movew(0x0, addr_(Z80_bus_request));
+
     func_v_int.moveb(UI_MODE_V_INT_OCCURRED, addr_(_ui_mode_ram_addr)); // Set GUI Mode to "VInt occurred"
-    func_v_int.jmp(current_v_int_handler);
+    func_v_int.movem_from_stack({ reg_D0_D7 }, { reg_A0_A6 });
     func_v_int.rte();
 
     func_v_int.label("fallback_to_old_vint");
     func_v_int.jmp(current_v_int_handler);
 
     return rom.inject_code(func_v_int);
-//    move.l	#vdpComm($0000,VSRAM,WRITE),(VDP_control_port).l
-//    move.l	(V_scroll_value).w,(VDP_data_port).l
-
-//    btst	    #6, (Graphics_flags).w
-//    beq.s	+	; branch if it's not a PAL system
-//    move.w	#$700,d0
-//    -
-//    dbf d0,-	; otherwise, waste a bit of time here
-//    +
-
-//    dma68kToVDP Normal_palette,$0000,$80,CRAM
-//    dma68kToVDP Sprite_table_buffer,$F800,$280,VRAM
-//    dma68kToVDP H_scroll_buffer,$F000,$380,VRAM
-
-//    bsr.w	Process_DMA_Queue
-//            startZ80
-//    bsr.w	Process_Nem_Queue
 }
 
-uint32_t Engine::inject_func_wait_vsync(md::ROM& rom)
-{
-    md::Code func_wait_vsync;
-
-    func_wait_vsync.move_to_sr(0x2300);
-    func_wait_vsync.label("loop");
-    func_wait_vsync.tstb(addr_(V_int_routine));
-    func_wait_vsync.bne("loop"); // Wait until V-int's run
-    func_wait_vsync.rts();
-
-    return rom.inject_code(func_wait_vsync);
-}
-
-/*
+uint32_t Engine::inject_func_wait_vsync(md::ROM& rom) const
 {
     md::Code func_wait_vsync;
 
@@ -131,9 +140,8 @@ uint32_t Engine::inject_func_wait_vsync(md::ROM& rom)
 
     return rom.inject_code(func_wait_vsync);
 }
- */
 
-uint32_t Engine::inject_func_copy_plane_map_to_vram(md::ROM& rom)
+uint32_t Engine::inject_func_copy_plane_map_to_vram(md::ROM& rom) const
 {
     // Params:
     //      - D0.w: VDP control word
@@ -163,7 +171,7 @@ uint32_t Engine::inject_func_copy_plane_map_to_vram(md::ROM& rom)
     return rom.inject_code(func_copy_plane_map_to_vram, "copy_plane_map_to_vram");
 }
 
-uint32_t Engine::inject_func_draw_string(md::ROM& rom)
+uint32_t Engine::inject_func_draw_string(md::ROM& rom) const
 {
     // Params:
     //      - A1: string starting address
@@ -187,7 +195,7 @@ uint32_t Engine::inject_func_draw_string(md::ROM& rom)
     return rom.inject_code(func_draw_string);
 }
 
-uint32_t Engine::inject_func_poll_controller(md::ROM& rom)
+uint32_t Engine::inject_func_poll_controller(md::ROM& rom) const
 {
     md::Code func_poll_controller;
     func_poll_controller.movem_to_stack({ reg_D1 }, { reg_A0 });
@@ -216,7 +224,7 @@ uint32_t Engine::inject_func_poll_controller(md::ROM& rom)
     return rom.inject_code(func_poll_controller);
 }
 
-uint32_t Engine::inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_map_to_vram, uint32_t draw_string)
+uint32_t Engine::inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_map_to_vram, uint32_t draw_string) const
 {
     md::Code func_build_text_plane;
 
@@ -242,7 +250,7 @@ uint32_t Engine::inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_
     return rom.inject_code(func_build_text_plane);
 }
 
-uint32_t Engine::inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_controller)
+uint32_t Engine::inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_controller) const
 {
     auto HANDLE_BUTTON_PRESS = [this](md::Code& func, const std::string& button_name, uint8_t button_bit)
     {
@@ -296,7 +304,7 @@ uint32_t Engine::inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_cont
     return rom.inject_code(func_handle_gui_controls);
 }
 
-uint32_t Engine::inject_func_mark_fields(md::ROM& rom)
+uint32_t Engine::inject_func_mark_fields(md::ROM& rom) const
 {
     md::Code func_change_palette;
 
@@ -365,16 +373,13 @@ uint32_t Engine::inject_func_mark_fields(md::ROM& rom)
     return rom.inject_code(func_mark_fields);
 }
 
-uint32_t Engine::inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_controls, uint32_t mark_fields, uint32_t wait_vsync)
+uint32_t Engine::inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_controls, uint32_t mark_fields, uint32_t wait_vsync) const
 {
     md::Code func_gui_main_loop;
     func_gui_main_loop.label("begin"); // routine running during level select
 
     // Wait for the frame to be drawn by the VDP before processing another one
-    func_gui_main_loop.move_to_sr(0x2300); // Enable VInts
-    func_gui_main_loop.moveb(0x16, addr_(V_int_routine));
     func_gui_main_loop.jsr(wait_vsync);
-    func_gui_main_loop.move_to_sr(0x2700); // Disable VInts
 
     func_gui_main_loop.moveq(0, reg_D3); // Palette line 0
     func_gui_main_loop.jsr(mark_fields); // 0x7F62
@@ -384,16 +389,12 @@ uint32_t Engine::inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_contr
     func_gui_main_loop.movew(0x2000, reg_D3); // Palette line 1
     func_gui_main_loop.jsr(mark_fields); // 0x7F62
 
-//    func_settings_menu.moveb(addr_(0xF605), reg_D0); // CTRL_1_PRESSED
-//    func_settings_menu.orb(addr_(0xF607), reg_D0); // CTRL_2_PRESSED
-//    func_settings_menu.andib(0x80, reg_D0);
-//    func_settings_menu.bne(LevelSelect_PressStart);
     func_gui_main_loop.bra("begin");
 
     return rom.inject_code(func_gui_main_loop);
 }
 
-uint32_t Engine::inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp)
+uint32_t Engine::inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp) const
 {
     uint32_t gui_tileset_addr = rom.inject_bytes(GUI_TILESET, GUI_TILESET_SIZE);
 
@@ -428,7 +429,7 @@ uint32_t Engine::inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp)
     return rom.inject_code(func_init_gui);
 }
 
-uint32_t Engine::inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t build_text_plane, uint32_t ui_main_loop)
+uint32_t Engine::inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t build_text_plane, uint32_t ui_main_loop) const
 {
     md::Code func_boot_gui;
 
@@ -439,8 +440,8 @@ uint32_t Engine::inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t bu
     func_boot_gui.jsr(addr_(reg_A1));
 
     func_boot_gui.label("after_preinit");
-    func_boot_gui.jsr(init_ui); // func_settings_menu.jmp(0x7B34);
-    func_boot_gui.jsr(build_text_plane); // func_settings_menu.jmp(0x7BB2);
+    func_boot_gui.jsr(init_ui);
+    func_boot_gui.jsr(build_text_plane);
 
     // Init palette
     constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
@@ -452,9 +453,7 @@ uint32_t Engine::inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t bu
     func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xC));
     func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xE));
 
-//    func_settings_menu.moveb(0x16, addr_(V_int_routine));
-//    func_settings_menu.jsr(Wait_VSync);
-    func_boot_gui.movew(0x8134/*addr_(VDP_reg_1_command)*/, reg_D0);
+    func_boot_gui.movew(0x8134, reg_D0);
     func_boot_gui.orib(0x40, reg_D0);
     func_boot_gui.movew(reg_D0, addr_(VDP_control_port));
 
