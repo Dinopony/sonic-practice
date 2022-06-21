@@ -2,6 +2,7 @@
 
 #include "../md_tools/md_tools.hpp"
 #include <string>
+#include <iostream>
 
 class GamePatch {
 public:
@@ -32,13 +33,14 @@ public:
     void patch_rom(md::ROM& rom)
     {
         this->mark_empty_chunks(rom);
-
+        uint32_t empty = rom.remaining_empty_bytes();
         this->skip_title_screen_to_level_select(rom);
         this->give_infinite_lives(rom);
         this->add_savestate_handling(rom);
         this->display_additionnal_hud_on_pause(rom);
 
         this->game_specific_patches(rom);
+        std::cout << (empty - rom.remaining_empty_bytes()) << " consumed bytes" << std::endl;
     }
 };
 

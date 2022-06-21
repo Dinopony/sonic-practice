@@ -112,10 +112,6 @@ namespace md
         Code& subw(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->sub(param, reg, Size::WORD, param_minus_reg); }
         Code& subl(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->sub(param, reg, Size::LONG, param_minus_reg); }
 
-        Code& or_(const Param& param, const DataRegister& reg, Size size, bool param_minus_reg = false);
-        Code& orb(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_(param, reg, Size::BYTE, param_minus_reg); }
-        Code& orw(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_(param, reg, Size::WORD, param_minus_reg); }
-        Code& orl(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_(param, reg, Size::LONG, param_minus_reg); }
 
         Code& mulu(const Param& value, const DataRegister& dx);
         Code& mulu(uint16_t value, const DataRegister& dx) { return this->mulu(wval_(value), dx); }
@@ -132,6 +128,16 @@ namespace md
         Code& andb(const Param& from, const DataRegister& to) { return this->and_to_dx(from, to, Size::BYTE); }
         Code& andw(const Param& from, const DataRegister& to) { return this->and_to_dx(from, to, Size::WORD); }
         Code& andl(const Param& from, const DataRegister& to) { return this->and_to_dx(from, to, Size::LONG); }
+
+        Code& or_to_dx(const Param& param, const DataRegister& reg, Size size, bool param_minus_reg = false);
+        Code& orb(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_to_dx(param, reg, Size::BYTE, param_minus_reg); }
+        Code& orw(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_to_dx(param, reg, Size::WORD, param_minus_reg); }
+        Code& orl(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->or_to_dx(param, reg, Size::LONG, param_minus_reg); }
+
+        Code& not_to_dx(const DataRegister& reg, Size size);
+        Code& notb(const DataRegister& reg) { return this->not_to_dx(reg, Size::BYTE); }
+        Code& notw(const DataRegister& reg) { return this->not_to_dx(reg, Size::WORD); }
+        Code& notl(const DataRegister& reg) { return this->not_to_dx(reg, Size::LONG); }
 
         Code& andi(const ImmediateValue& value, const Param& target, Size size);
         Code& andib(uint8_t value, const Param& target) { return this->andi(ImmediateValue(value), target, Size::BYTE); }
@@ -163,6 +169,7 @@ namespace md
         Code& swap(const DataRegister& reg);
 
         Code& rts();
+        Code& rte();
         Code& nop(uint16_t amount = 1);
         Code& trap(uint8_t trap_id, const std::vector<uint8_t>& additionnal_bytes = {});
 

@@ -1,29 +1,31 @@
 #include "info.hpp"
 #include "../md_tools/md_tools.hpp"
 
-ByteArray UiInfo::build_string_bytes() const
+namespace mdui {
+
+ByteArray Info::build_string_bytes() const
 {
     ByteArray bytes;
 
-    for(const UiString& str : _strings)
+    for(const Text& str : _strings)
         bytes.add_bytes(str.text_bytes());
     bytes.add_byte(0xFF);
 
     return bytes;
 }
 
-ByteArray UiInfo::build_string_position_bytes() const
+ByteArray Info::build_string_position_bytes() const
 {
     ByteArray bytes;
 
-    for(const UiString& str : _strings)
+    for(const Text& str : _strings)
         bytes.add_word(str.position_bytes());
     bytes.add_word(0xFFFF);
 
     return bytes;
 }
 
-ByteArray UiInfo::build_selection_mapping_bytes() const
+ByteArray Info::build_selection_mapping_bytes() const
 {
     ByteArray bytes;
     for(const auto& [selection_id, x, y, size] : _selection_mappings)
@@ -38,7 +40,7 @@ ByteArray UiInfo::build_selection_mapping_bytes() const
     return bytes;
 }
 
-ByteArray UiInfo::build_palette_bytes() const
+ByteArray Info::build_palette_bytes() const
 {
     std::vector<const Color*> colors = {
             &_background_color,
@@ -57,7 +59,7 @@ ByteArray UiInfo::build_palette_bytes() const
     return bytes;
 }
 
-uint32_t UiInfo::inject_data(md::ROM& rom)
+uint32_t Info::inject(md::ROM& rom)
 {
     if(_main_table_addr)
         return _main_table_addr;
@@ -67,9 +69,7 @@ uint32_t UiInfo::inject_data(md::ROM& rom)
     main_bytes_table.add_long(rom.inject_bytes(build_string_position_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_selection_mapping_bytes()));
 
-    main_bytes_table.add_long(_controller_ram_addr);
     main_bytes_table.add_long(_current_option_ram_addr);
-    main_bytes_table.add_long(_input_repeat_ram_addr);
 
     main_bytes_table.add_long(_preinit_function_addr);
 
@@ -87,7 +87,7 @@ uint32_t UiInfo::inject_data(md::ROM& rom)
     return _main_table_addr;
 }
 
-uint8_t UiInfo::max_selection() const
+uint8_t Info::max_selection() const
 {
     uint8_t highest_sel = 0;
     for(const auto& [sel,_2,_3,_4] : _selection_mappings)
@@ -95,3 +95,5 @@ uint8_t UiInfo::max_selection() const
             highest_sel = sel;
     return highest_sel;
 }
+
+} // namespace mdui

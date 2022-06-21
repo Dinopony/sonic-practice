@@ -4,13 +4,15 @@
 #include <utility>
 #include "../tools/byte_array.hpp"
 
-class UiString {
+namespace mdui {
+
+class Text {
 private:
     std::string _str;
     std::pair<uint8_t, uint8_t> _position;
 
 public:
-    explicit UiString(std::string str, std::pair<uint8_t, uint8_t> position) :
+    explicit Text(std::string str, std::pair<uint8_t, uint8_t> position) :
         _str        (std::move(str)),
         _position   (std::move(position))
     {}
@@ -21,3 +23,5 @@ public:
     [[nodiscard]] ByteArray text_bytes() const;
     [[nodiscard]] uint16_t position_bytes() const;
 };
+
+} // namespace end

@@ -39,8 +39,10 @@ set(SOURCES
         src/ui/engine.cpp
         src/ui/info.hpp
         src/ui/info.cpp
-        src/ui/string.hpp
-        src/ui/string.cpp
+        src/ui/text.hpp
+        src/ui/text.cpp
+        src/ui/vertical_menu.hpp
+        src/ui/vertical_menu.cpp
 
         # --- Patches ----------------------------------------
         src/patches/game_patch_s3k.hpp

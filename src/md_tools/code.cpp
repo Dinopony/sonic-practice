@@ -415,23 +415,6 @@ Code& Code::sub(const Param& param, const DataRegister& reg, Size size, bool par
     return *this;
 }
 
-Code& Code::or_(const Param& param, const DataRegister& reg, Size size, bool param_minus_reg)
-{
-    uint16_t size_code = 0x0;
-    if (size == Size::WORD)
-        size_code = 0x1;
-    else if (size == Size::LONG)
-        size_code = 0x2;
-
-    uint16_t param_minus_reg_mask = ((param_minus_reg) ? 1 : 0) << 8;
-
-    uint16_t opcode = 0x8000 + (reg.getXn() << 9) + param_minus_reg_mask + (size_code << 6) + param.getMXn();
-    this->add_opcode(opcode);
-    this->add_bytes(param.getAdditionnalData());
-
-    return *this;
-}
-
 Code& Code::mulu(const Param& value, const DataRegister& dx)
 {
     uint16_t opcode = 0xC0C0 + (dx.getXn() << 9) + value.getMXn();
@@ -478,6 +461,38 @@ Code& Code::and_to_dx(const Param& from, const DataRegister& to, Size size)
     uint16_t opcode = 0xC000 + (to.getXn() << 9) + (size_code << 6) + from.getMXn();
     this->add_opcode(opcode);
     this->add_bytes(from.getAdditionnalData());
+
+    return *this;
+}
+
+Code& Code::or_to_dx(const Param& param, const DataRegister& reg, Size size, bool param_minus_reg)
+{
+    uint16_t size_code = 0x0;
+    if (size == Size::WORD)
+        size_code = 0x1;
+    else if (size == Size::LONG)
+        size_code = 0x2;
+
+    uint16_t param_minus_reg_mask = ((param_minus_reg) ? 1 : 0) << 8;
+
+    uint16_t opcode = 0x8000 + (reg.getXn() << 9) + param_minus_reg_mask + (size_code << 6) + param.getMXn();
+    this->add_opcode(opcode);
+    this->add_bytes(param.getAdditionnalData());
+
+    return *this;
+}
+
+Code& Code::not_to_dx(const DataRegister& reg, Size size)
+{
+    uint16_t size_code = 0x0;
+    if (size == Size::WORD)
+        size_code = 0x1;
+    else if (size == Size::LONG)
+        size_code = 0x2;
+
+    uint16_t opcode = 0x4600 + (size_code << 6) + reg.getMXn();
+    this->add_opcode(opcode);
+    this->add_bytes(reg.getAdditionnalData());
 
     return *this;
 }
@@ -562,7 +577,13 @@ Code& Code::swap(const DataRegister& reg)
 
 Code& Code::rts()
 {
-    this->add_word(0x4E75);
+    this->add_opcode(0x4E75);
+    return *this;
+}
+
+Code& Code::rte()
+{
+    this->add_opcode(0x4E73);
     return *this;
 }
 

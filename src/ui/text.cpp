@@ -1,6 +1,8 @@
-#include "string.hpp"
+#include "text.hpp"
 
-ByteArray UiString::text_bytes() const
+namespace mdui {
+
+ByteArray Text::text_bytes() const
 {
     const std::vector<char> CONVERSION_TABLE = {
             ' ',
@@ -32,7 +34,9 @@ ByteArray UiString::text_bytes() const
     return output;
 }
 
-uint16_t UiString::position_bytes() const
+uint16_t Text::position_bytes() const
 {
     return (_position.first * 2) + (0x50 * _position.second);
 }
+
+} // namespace end
