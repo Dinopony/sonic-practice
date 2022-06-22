@@ -1,28 +1,21 @@
 #include "engine.hpp"
 #include "info.hpp"
+#include "vertical_menu.hpp"
 #include "../../assets/nem_decomp.bin.hxx"
+#include <iostream>
 
 namespace mdui {
 
-// TODO: It will be needed at some point to have some kind of "UiEngine" class that:
-//          - injects the UI core
-//          - handles control engine using the appropriate RAM space for the game
-//        Info then becomes a structure that contains a specific menu descriptor, but no redundant core code
-
-// TODO: Override Vint with a custom one that does whatever the current good behavior is,
-//       and then jumps to the regular Vint if UI is not enabled
-//       S3K executes VInt at FFF0 in RAM, leading to 0x584 (VInt function)
-//       - Change ROM header to execute a custom VInt
-//       - Custom VInt tests (UI_Mode).b.
-//              * If true, execute current minimum viable behavior (Poll inputs + VSync VDP stuff?)
-//              * If false, JMP to old address in VInt table
-//       - This should work for absolutely any game
+// TODO: fix our own controller poll function which produces weird bits
+// TODO: on plane constitution, add options to the right
+// TODO: on init, load options from SRAM
+// TODO: allow moving the plane map (changes references to RAM_Start)
 
 // Global RAM offsets that are always valid
 constexpr uint32_t RAM_start = 0xFFFF0000;
 constexpr uint32_t VDP_data_port = 0xC00000;
 constexpr uint32_t VDP_control_port = 0xC00004;
-constexpr uint32_t Controller_1_data_port = 0xA10002;
+constexpr uint32_t Controller_1_data_port = 0xA10003;
 constexpr uint32_t Z80_bus_request = 0xA11100;
 
 constexpr uint8_t UI_MODE_DISABLED = 0x0;
@@ -31,48 +24,253 @@ constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
-uint32_t Engine::inject(md::ROM& rom)
+/**
+ * Changes the currently selected option, updating the layout accordingly using the selection mappings
+ *
+ * Input:
+ *      - D0.b: New option to select
+ */
+uint32_t Engine::func_set_selected_option()
 {
-    // Replace base game's VInt by a custom VInt that only triggers when UI is displayed
-    _func_v_int = inject_func_v_int(rom, rom.get_long(0x78));
-    rom.set_long(0x78, _func_v_int);
+    if(_func_set_selected_option)
+        return _func_set_selected_option;
+    // ------------------------------------------------------------------------------------------
 
-    _func_nemesis_decomp = inject_func_nemesis_decomp(rom);
-    _func_init_ui = inject_func_init_ui(rom, _func_nemesis_decomp);
+    md::Code func;
+    func.movem_to_stack({ reg_D3 }, {});
 
-    _func_copy_plane_map_to_vram = inject_func_copy_plane_map_to_vram(rom);
-    _func_draw_string = inject_func_draw_string(rom);
-    _func_build_text_plane = inject_func_build_text_plane(rom, _func_copy_plane_map_to_vram, _func_draw_string);
+    // Apply a neutral palette to previously selected option
+    func.movew(0x0000, reg_D3);
+    func.jsr(func_apply_selection_mapping());
 
-    _func_poll_controller = inject_func_poll_controller(rom);
-    _func_handle_ui_controls = inject_func_handle_ui_controls(rom, _func_poll_controller);
+    // Change the currently selected option
+    func.moveb(reg_D0, addrw_(_current_option_ram_addr));
 
-    _func_mark_fields = inject_func_mark_fields(rom);
-    _func_wait_vsync = inject_func_wait_vsync(rom);
-    _func_ui_main_loop = inject_func_ui_main_loop(rom, _func_handle_ui_controls, _func_mark_fields, _func_wait_vsync);
+    // Apply a highlighted palette to newly selected option
+    func.movew(0x2000, reg_D3);
+    func.jsr(func_apply_selection_mapping());
 
-    _func_boot_ui = inject_func_boot_ui(rom, _func_init_ui, _func_build_text_plane, _func_ui_main_loop);
-    return _func_boot_ui;
+    func.movem_from_stack({ reg_D3 }, {});
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_set_selected_option = _rom.inject_code(func);
+    return _func_set_selected_option;
 }
 
-uint32_t Engine::inject_func_nemesis_decomp(md::ROM& rom) const
+/**
+ * Converts 2D coordinates into a plane map address, which then can be used to edit tile/palette at those coordinates
+ *
+ *  Input:
+ *      - D1: X start position
+ *      - D2: Y start position
+ *      - A2: Plane map starting address
+ *  Output:
+ *      - A1: Target address
+ *      - Input
+ */
+uint32_t Engine::func_coords_to_plane_map_address()
 {
-    return rom.inject_bytes(NEM_DECOMP, NEM_DECOMP_SIZE);
+    if(_func_coords_to_plane_map_address)
+        return _func_coords_to_plane_map_address;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D2 }, {});
+
+    func.mulu(0x50, reg_D2);                    // Multiply Y by 0x50
+    func.lslw(1, reg_D1);                       // Multiply X by 2
+    func.addw(reg_D1, reg_D2);                  // Add those two to have the offset
+    func.lea(addrw_(reg_A2, reg_D2), reg_A1);   // Apply this offset to plane map starting address to get the effective address
+
+    func.movem_from_stack({ reg_D2 }, {});
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_coords_to_plane_map_address = _rom.inject_code(func);
+    return _func_coords_to_plane_map_address;
 }
 
-uint32_t Engine::inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler) const
+/**
+ * Change the palette of N consecutive tiles, starting at the given address.
+ *
+ * Input:
+ *      - D1.b: X start position
+ *      - D2.b: Y start position
+ *      - D3.w: Palette mask to apply (0x0000, 0x2000, 0x4000, 0x6000 for palettes 0, 1, 2, 3 respectively)
+ *      - D4.l: Number of consecutive tiles to change
+ *
+ *      - A2: Plane map starting address
+ */
+uint32_t Engine::func_set_palette()
 {
-    md::Code func_v_int;
+    if(_func_set_palette)
+        return _func_set_palette;
+    // ------------------------------------------------------------------------------------------
 
-    func_v_int.nop();
-    func_v_int.tstb(addr_(_ui_mode_ram_addr));
-    func_v_int.beq("fallback_to_old_vint"); // If UI Mode == 0, jump to the usual VInt for this game
+    md::Code func;
+    func.movem_to_stack({ reg_D0 }, {});
 
-    func_v_int.movem_to_stack({ reg_D0_D7 }, { reg_A0_A6 });
-    func_v_int.label("wait_for_vertical_blanking");
-    func_v_int.movew(addr_(VDP_control_port), reg_D0);
-    func_v_int.andiw(0x8, reg_D0);
-    func_v_int.beq("wait_for_vertical_blanking");
+    // Use the coordinates to deduce A1 (base address where to alter used palette)
+    func.jsr(func_coords_to_plane_map_address());
+
+    // Change the palette for the D4 consecutive tiles
+    func.label("loop");
+    func.movew(addr_(reg_A1), reg_D0);
+    func.andiw(0x9FFF, reg_D0);
+    func.addw(reg_D3, reg_D0);
+    func.movew(reg_D0, addr_postinc_(reg_A1));
+    func.dbra(reg_D4, "loop");
+
+    func.label("return");
+    func.movem_from_stack({ reg_D0 }, {});
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_set_palette = _rom.inject_code(func);
+    return _func_set_palette;
+}
+
+/**
+ * Apply currently selected option's "selection mapping", highlighting specific tiles of the layout with a specific
+ * palette to show it's being selected.
+ *
+ * Input:
+ *      - D3.w: Palette mask to apply (0x0000, 0x2000, 0x4000, 0x6000 for palettes 0, 1, 2, 3 respectively)
+ *
+ *      - A4: Layout descriptor addr (must be at least a VerticalMenu to have selection mappings)
+ */
+uint32_t Engine::func_apply_selection_mapping()
+{
+    if(_func_apply_selection_mapping)
+        return _func_apply_selection_mapping;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D1,reg_D2,reg_D4 }, { reg_A2,reg_A3 });
+
+    // Set plane map starting address in A2
+    func.lea(addr_(RAM_start), reg_A2);
+
+    // Mask argument passed in D3 so it cannot alter the tile attributes other than palette ID
+    func.andiw(0x6000, reg_D3);
+
+    // Resolve address of selection mappings table and store it in A3
+    func.movel(addr_(reg_A4, VerticalMenu::SELECTION_MAPPINGS_OFFSET), reg_A3);
+
+    // Store currently selected option in D0
+    func.clrl(reg_D0);
+    func.moveb(addr_(_current_option_ram_addr), reg_D0);
+
+    // Format of data inside table pointed by A3 is [option_id.b, x.b, y.b, size.b]
+    // Iterate over data, finding option_id that match with currently selected option
+    func.label("loop");
+    // If option_id is 0xFF, it means we reached end of table
+    func.cmpib(0xFF, addr_(reg_A3));
+    func.beq("return");
+    // If option_id matches D0 (currently selected option), process it. Otherwise, skip it.
+    func.cmpb(addr_postinc_(reg_A3), reg_D0);
+    func.bne("next_mapping");
+
+    // Selected option found: read X, Y and Size, then call the palette change function
+    func.clrl(reg_D1);
+    func.moveb(addr_postinc_(reg_A3), reg_D1); // X in D1
+    func.clrl(reg_D2);
+    func.moveb(addr_postinc_(reg_A3), reg_D2); // Y in D2
+    func.clrl(reg_D4);
+    func.moveb(addr_postinc_(reg_A3), reg_D4); // Size in D4
+    func.jsr(func_set_palette());
+    func.bra("loop");
+
+    // Not the option we are looking for: skip it
+    func.label("next_mapping");
+    func.addqw(0x3, reg_A3);
+    func.bra("loop");
+
+    func.label("return");
+    func.movem_from_stack({ reg_D0,reg_D1,reg_D2,reg_D4 }, { reg_A2,reg_A3 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_apply_selection_mapping = _rom.inject_code(func);
+    return _func_apply_selection_mapping;
+}
+
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_nemesis_decomp()
+{
+    if(_func_nemesis_decomp)
+        return _func_nemesis_decomp;
+    // ------------------------------------------------------------------------------------------
+
+    _func_nemesis_decomp = _rom.inject_bytes(NEM_DECOMP, NEM_DECOMP_SIZE);
+    return _func_nemesis_decomp;
+}
+
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_poll_controller()
+{
+    if(_func_poll_controller)
+        return _func_poll_controller;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D1 }, { reg_A0 });
+
+    // Might be necessary to ensure this works in any game:
+    // moveq	#$40,d0
+    // move.b	d0,(HW_Port_1_Control).l
+    func.lea(addr_(Controller_1_data_port), reg_A0);
+
+    func.moveb(0x00, addr_(reg_A0)); // Poll controller data port
+    func.nop(2);
+    func.moveb(addr_(reg_A0), reg_D0); // Get controller port data (start/A)
+    func.lslb(0x2, reg_D0);
+    func.andib(0xC0, reg_D0);
+
+    func.moveb(0x40, addr_(reg_A0)); // Poll controller data port again
+    func.nop(2);
+    func.moveb(addr_(reg_A0), reg_D1); // Get controller port data (B/C/Dpad)
+    func.andib(0x3F, reg_D1);
+    func.orb(reg_D1, reg_D0); // Fuse together into one controller bit array
+    func.notb(reg_D0);
+
+    func.moveb(reg_D0, addrw_(_input_bits_ram_addr));
+
+    func.movem_from_stack({ reg_D0,reg_D1 }, { reg_A0 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_poll_controller = _rom.inject_code(func);
+    return _func_poll_controller;
+}
+
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_v_int()
+{
+    if(_func_v_int)
+        return _func_v_int;
+    // ------------------------------------------------------------------------------------------
+
+    uint32_t original_v_int = _rom.get_long(0x78);
+
+    md::Code func;
+
+    func.nop();
+    func.tstb(addr_(_ui_mode_ram_addr));
+    func.beq("fallback_to_old_vint"); // If UI Mode == 0, jump to the usual VInt for this game
+
+    func.movem_to_stack({ reg_D0_D7 }, { reg_A0_A6 });
+    func.label("wait_for_vertical_blanking");
+    func.movew(addr_(VDP_control_port), reg_D0);
+    func.andiw(0x8, reg_D0);
+    func.beq("wait_for_vertical_blanking");
 
     // If PAL system, wait a bit
 //    func_v_int.btst(0x6, addrw_(0xFFD8)); // Graphics_flags
@@ -88,170 +286,186 @@ uint32_t Engine::inject_func_v_int(md::ROM& rom, uint32_t current_v_int_handler)
 //    func_v_int.btst(0x0, addr_(Z80_bus_request));
 //    func_v_int.bne("wait_z80_stop");
 
-    func_v_int.jsr(0x10DE); // pollControllers
+    func.jsr(func_poll_controller()); // pollControllers = 0x10DE
 
     // dma68kToVDP 0xFC00 (Palette),$0000,$80,CRAM
-    func_v_int.lea(addr_(VDP_control_port), reg_A5);
-    func_v_int.movel(0x94009340, addr_(reg_A5));
-    func_v_int.movel(0x96FE9500, addr_(reg_A5));
-    func_v_int.movew(0x977F, addr_(reg_A5));
-    func_v_int.movew(0xC000, addr_(reg_A5));
-    func_v_int.movew(0x80, addrw_(0xF640));
-    func_v_int.movew(addrw_(0xF640), addr_(reg_A5));
+    func.lea(addr_(VDP_control_port), reg_A5);
+    func.movel(0x94009340, addr_(reg_A5));
+    func.movel(0x96FE9500, addr_(reg_A5));
+    func.movew(0x977F, addr_(reg_A5));
+    func.movew(0xC000, addr_(reg_A5));
+    func.movew(0x80, addrw_(0xF640));
+    func.movew(addrw_(0xF640), addr_(reg_A5));
 
     // dma68kToVDP 0xF800 (Sprite_table_buffer),$F800,$280,VRAM
-    func_v_int.lea(addr_(VDP_control_port), reg_A5);
-    func_v_int.movel(0x94019340, addr_(reg_A5));
-    func_v_int.movel(0x96FC9500, addr_(reg_A5));
-    func_v_int.movew(0x977F, addr_(reg_A5));
-    func_v_int.movew(0x7800, addr_(reg_A5));
-    func_v_int.movew(0x83, addrw_(0xF640));
-    func_v_int.movew(addrw_(0xF640), addr_(reg_A5));
+    func.lea(addr_(VDP_control_port), reg_A5);
+    func.movel(0x94019340, addr_(reg_A5));
+    func.movel(0x96FC9500, addr_(reg_A5));
+    func.movew(0x977F, addr_(reg_A5));
+    func.movew(0x7800, addr_(reg_A5));
+    func.movew(0x83, addrw_(0xF640));
+    func.movew(addrw_(0xF640), addr_(reg_A5));
 
 //    func_v_int.jsr(0x1588); // Process_DMA_Queue
 
     // Start Z80
 //    func_v_int.movew(0x0, addr_(Z80_bus_request));
 
-    func_v_int.moveb(UI_MODE_V_INT_OCCURRED, addr_(_ui_mode_ram_addr)); // Set GUI Mode to "VInt occurred"
-    func_v_int.movem_from_stack({ reg_D0_D7 }, { reg_A0_A6 });
-    func_v_int.rte();
+    func.moveb(UI_MODE_V_INT_OCCURRED, addr_(_ui_mode_ram_addr)); // Set GUI Mode to "VInt occurred"
+    func.movem_from_stack({ reg_D0_D7 }, { reg_A0_A6 });
+    func.rte();
 
-    func_v_int.label("fallback_to_old_vint");
-    func_v_int.jmp(current_v_int_handler);
+    func.label("fallback_to_old_vint");
+    func.jmp(original_v_int);
 
-    return rom.inject_code(func_v_int);
+    // ------------------------------------------------------------------------------------------
+    _func_v_int = _rom.inject_code(func);
+    return _func_v_int;
 }
 
-uint32_t Engine::inject_func_wait_vsync(md::ROM& rom) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_wait_vsync()
 {
-    md::Code func_wait_vsync;
+    if(_func_wait_vsync)
+        return _func_wait_vsync;
+    // ------------------------------------------------------------------------------------------
 
-    func_wait_vsync.move_to_sr(0x2300); // Enable VInts
+    md::Code func;
 
-    func_wait_vsync.label("wait_for_v_int");
-    func_wait_vsync.cmpib(UI_MODE_V_INT_OCCURRED, addr_(_ui_mode_ram_addr));
-    func_wait_vsync.bne("wait_for_v_int");
+    func.move_to_sr(0x2300); // Enable VInts
 
-    func_wait_vsync.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
+    func.label("wait_for_v_int");
+    func.cmpib(UI_MODE_V_INT_OCCURRED, addr_(_ui_mode_ram_addr));
+    func.bne("wait_for_v_int");
 
-    func_wait_vsync.move_to_sr(0x2700); // Disable VInts
-    func_wait_vsync.rts();
+    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
 
-    return rom.inject_code(func_wait_vsync);
+    func.move_to_sr(0x2700); // Disable VInts
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_wait_vsync = _rom.inject_code(func);
+    return _func_wait_vsync;
 }
 
-uint32_t Engine::inject_func_copy_plane_map_to_vram(md::ROM& rom) const
+/**
+ * TODO doc
+ *
+ * Input:
+ *      - D0.w: VDP control word
+ *      - D1.b: tiles per row
+ *      - D2.b: number of rows to copy
+ */
+uint32_t Engine::func_copy_plane_map_to_vram()
 {
-    // Params:
-    //      - D0.w: VDP control word
-    //      - D1.b: tiles per row
-    //      - D2.b: number of rows to copy
-    md::Code func_copy_plane_map_to_vram;
+    if(_func_copy_plane_map_to_vram)
+        return _func_copy_plane_map_to_vram;
+    // ------------------------------------------------------------------------------------------
 
-    func_copy_plane_map_to_vram.lea(addr_(RAM_start), reg_A1);
-    func_copy_plane_map_to_vram.movel(0x40000003, reg_D0);
-    func_copy_plane_map_to_vram.moveq(0x27, reg_D1);
-    func_copy_plane_map_to_vram.moveq(0x1B, reg_D2);
+    md::Code func;
 
-    func_copy_plane_map_to_vram.lea(addr_(VDP_data_port), reg_A6);
+    func.lea(addr_(RAM_start), reg_A1);
+    func.movel(0x40000003, reg_D0);
+    func.moveq(0x27, reg_D1);
+    func.moveq(0x1B, reg_D2);
 
-    func_copy_plane_map_to_vram.label("loop_row");
-    func_copy_plane_map_to_vram.movel(reg_D0, addr_(VDP_control_port));
-    func_copy_plane_map_to_vram.movew(reg_D1, reg_D3);
+    func.lea(addr_(VDP_data_port), reg_A6);
 
-    func_copy_plane_map_to_vram.label("loop_tile");
-    func_copy_plane_map_to_vram.movew(addr_postinc_(reg_A1), addr_(reg_A6));
-    func_copy_plane_map_to_vram.dbra(reg_D3, "loop_tile");   // copy one row
+    func.label("loop_row");
+    func.movel(reg_D0, addr_(VDP_control_port));
+    func.movew(reg_D1, reg_D3);
 
-    func_copy_plane_map_to_vram.addil(0x800000, reg_D0); // move onto next row
-    func_copy_plane_map_to_vram.dbra(reg_D2, "loop_row");
-    func_copy_plane_map_to_vram.rts();
+    func.label("loop_tile");
+    func.movew(addr_postinc_(reg_A1), addr_(reg_A6));
+    func.dbra(reg_D3, "loop_tile");   // copy one row
 
-    return rom.inject_code(func_copy_plane_map_to_vram, "copy_plane_map_to_vram");
+    func.addil(0x800000, reg_D0); // move onto next row
+    func.dbra(reg_D2, "loop_row");
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_copy_plane_map_to_vram = _rom.inject_code(func);
+    return _func_copy_plane_map_to_vram;
 }
 
-uint32_t Engine::inject_func_draw_string(md::ROM& rom) const
+/**
+ * TODO doc
+ *
+ * Input:
+ *      - A1: string starting address
+ *      - A3: RAM graphics buffer start
+ *      - D3.w: string position
+ */
+uint32_t Engine::func_draw_string()
 {
-    // Params:
-    //      - A1: string starting address
-    //      - A3: RAM graphics buffer start
-    //      - D3.w: string position
-    md::Code func_draw_string;
+    if(_func_draw_string)
+        return _func_draw_string;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
 
     // Puts the exact RAM address where to write in A2
-    func_draw_string.lea(addrw_(reg_A3, reg_D3), reg_A2);
+    func.lea(addrw_(reg_A3, reg_D3), reg_A2);
     // Store the string size (first byte of the string) in D2
-    func_draw_string.moveq(0, reg_D2);
-    func_draw_string.moveb(addr_postinc_(reg_A1), reg_D2);
+    func.moveq(0, reg_D2);
+    func.moveb(addr_postinc_(reg_A1), reg_D2);
 
     // Iterate D2 times to write each letter tile of the string into the RAM
-    func_draw_string.label("loop_write_letter");
-    func_draw_string.moveb(addr_postinc_(reg_A1), reg_D0);
-    func_draw_string.movew(reg_D0, addr_postinc_(reg_A2));
-    func_draw_string.dbra(reg_D2, "loop_write_letter");
-    func_draw_string.rts();
+    func.label("loop_write_letter");
+    func.moveb(addr_postinc_(reg_A1), reg_D0);
+    func.movew(reg_D0, addr_postinc_(reg_A2));
+    func.dbra(reg_D2, "loop_write_letter");
+    func.rts();
 
-    return rom.inject_code(func_draw_string);
+    // ------------------------------------------------------------------------------------------
+    _func_draw_string = _rom.inject_code(func);
+    return _func_draw_string;
 }
 
-uint32_t Engine::inject_func_poll_controller(md::ROM& rom) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_build_text_plane()
 {
-    md::Code func_poll_controller;
-    func_poll_controller.movem_to_stack({ reg_D1 }, { reg_A0 });
+    if(_func_build_text_plane)
+        return _func_build_text_plane;
+    // ------------------------------------------------------------------------------------------
 
-    // Might be necessary to ensure this works in any game:
-    // moveq	#$40,d0
-    // move.b	d0,(HW_Port_1_Control).l
-    func_poll_controller.lea(addr_(Controller_1_data_port), reg_A0);
+    md::Code func;
 
-    func_poll_controller.moveb(0x00, addr_(reg_A0)); // Poll controller data port
-    func_poll_controller.nop(2);
-    func_poll_controller.moveb(addr_(reg_A0), reg_D0); // Get controller port data (start/A)
-    func_poll_controller.lslb(0x2, reg_D0);
-    func_poll_controller.andib(0xC0, reg_D0);
-
-    func_poll_controller.moveb(0x40, addr_(reg_A0)); // Poll controller data port again
-    func_poll_controller.nop(2);
-    func_poll_controller.moveb(addr_(reg_A0), reg_D1); // Get controller port data (B/C/Dpad)
-    func_poll_controller.andib(0x3F, reg_D1);
-    func_poll_controller.orb(reg_D1, reg_D0); // Fuse together into one controller bit array
-    func_poll_controller.notb(reg_D0);
-
-    func_poll_controller.movem_from_stack({ reg_D1 }, { reg_A0 });
-    func_poll_controller.rts();
-
-    return rom.inject_code(func_poll_controller);
-}
-
-uint32_t Engine::inject_func_build_text_plane(md::ROM& rom, uint32_t copy_plane_map_to_vram, uint32_t draw_string) const
-{
-    md::Code func_build_text_plane;
-
-    func_build_text_plane.lea(addr_(RAM_start), reg_A3);
-    func_build_text_plane.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
-    func_build_text_plane.movel(addr_(reg_A4, Info::STRING_POSITIONS_OFFSET), reg_A5);
-    func_build_text_plane.moveq(0, reg_D0);
+    func.lea(addr_(RAM_start), reg_A3);
+    func.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
+    func.movel(addr_(reg_A4, Info::STRING_POSITIONS_OFFSET), reg_A5);
+    func.moveq(0, reg_D0);
 
     // Double loop to write each letter of each line of text
-    func_build_text_plane.label("loop_write_string");
-    func_build_text_plane.movew(addr_postinc_(reg_A5), reg_D3);
-    func_build_text_plane.cmpiw(0xFFFF, reg_D3);
-    func_build_text_plane.beq("complete");
-    func_build_text_plane.jsr(draw_string);
-    func_build_text_plane.bra("loop_write_string");
+    func.label("loop_write_string");
+    func.movew(addr_postinc_(reg_A5), reg_D3);
+    func.cmpiw(0xFFFF, reg_D3);
+    func.beq("complete");
+    func.jsr(func_draw_string());
+    func.bra("loop_write_string");
 
     // Send our built plane map to VRAM
-    func_build_text_plane.label("complete");
-    func_build_text_plane.jsr(copy_plane_map_to_vram);
+    func.label("complete");
+    func.rts();
 
-    func_build_text_plane.rts();
-
-    return rom.inject_code(func_build_text_plane);
+    // ------------------------------------------------------------------------------------------
+    _func_build_text_plane = _rom.inject_code(func);
+    return _func_build_text_plane;
 }
 
-uint32_t Engine::inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_controller) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_handle_ui_controls()
 {
+    if(_func_handle_ui_controls)
+        return _func_handle_ui_controls;
+    // ------------------------------------------------------------------------------------------
+
     auto HANDLE_BUTTON_PRESS = [this](md::Code& func, const std::string& button_name, uint8_t button_bit)
     {
         std::string end_label = button_name + "_end";
@@ -274,193 +488,154 @@ uint32_t Engine::inject_func_handle_ui_controls(md::ROM& rom, uint32_t poll_cont
         func.addql(0x4, reg_A1);
     };
 
-    md::Code func_handle_gui_controls;
+    md::Code func;
 
     // First of all, check if we didn't already press a button recently. If so, just leave.
-    func_handle_gui_controls.tstb(addr_(_input_repeat_ram_addr));
-    func_handle_gui_controls.beq("can_process_inputs");
-    func_handle_gui_controls.subib(1, addr_(_input_repeat_ram_addr));
-    func_handle_gui_controls.rts();
+    func.tstb(addr_(_input_repeat_ram_addr));
+    func.beq("can_process_inputs");
+    func.subib(1, addr_(_input_repeat_ram_addr));
+    func.rts();
 
-    func_handle_gui_controls.label("can_process_inputs");
+    func.label("can_process_inputs");
     // Make D0 contain the currently pressed button bits
-//    func_handle_gui_controls.jsr(poll_controller); // TODO: Our own poll mechanism is broken for pretty much any button beyond up and down
-    func_handle_gui_controls.moveb(addr_(0xFFFFF604), reg_D0);
+    func.moveb(addr_(_input_bits_ram_addr), reg_D0);
     // Make A1 point on the first controller event callback address
-    func_handle_gui_controls.lea(addr_(reg_A4, Info::CONTROLLER_EVENTS_OFFSET), reg_A1);
+    func.lea(addr_(reg_A4, Info::CONTROLLER_EVENTS_OFFSET), reg_A1);
 
     // Test consecutively each button, and call the appropriate callback if pressed
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "up",     0);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "down",   1);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "left",   2);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "right",  3);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "b",      4);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "c",      5);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "a",      6);
-    HANDLE_BUTTON_PRESS(func_handle_gui_controls, "start",  7);
+    HANDLE_BUTTON_PRESS(func, "up",     0);
+    HANDLE_BUTTON_PRESS(func, "down",   1);
+    HANDLE_BUTTON_PRESS(func, "left",   2);
+    HANDLE_BUTTON_PRESS(func, "right",  3);
+    HANDLE_BUTTON_PRESS(func, "b",      4);
+    HANDLE_BUTTON_PRESS(func, "c",      5);
+    HANDLE_BUTTON_PRESS(func, "a",      6);
+    HANDLE_BUTTON_PRESS(func, "start",  7);
 
-    func_handle_gui_controls.rts();
+    func.rts();
 
-    return rom.inject_code(func_handle_gui_controls);
+    // ------------------------------------------------------------------------------------------
+    _func_handle_ui_controls = _rom.inject_code(func);
+    return _func_handle_ui_controls;
 }
 
-uint32_t Engine::inject_func_mark_fields(md::ROM& rom) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_ui_main_loop()
 {
-    md::Code func_change_palette;
+    if(_func_ui_main_loop)
+        return _func_ui_main_loop;
+    // ------------------------------------------------------------------------------------------
 
-    // Read X position beforehand, double it and store it in D2 to re-use it later
-    func_change_palette.moveq(0, reg_D2);
-    func_change_palette.moveb(addr_(reg_A5), reg_D2);
-    func_change_palette.lslb(1, reg_D2);
-
-    // Read info from A5 to compose D1 (VDP control word)
-    func_change_palette.moveq(0, reg_D1);
-    func_change_palette.moveb(addr_(reg_A5, 0x1), reg_D1);
-    func_change_palette.beq("return");
-    func_change_palette.lslw(7, reg_D1);
-    func_change_palette.addb(reg_D2, reg_D1);
-    func_change_palette.addiw(0xC000, reg_D1); // VRAM_Plane_A_Name_Table
-    func_change_palette.lsll(2, reg_D1);
-    func_change_palette.lsrw(2, reg_D1);
-    func_change_palette.oriw(0x4000, reg_D1); // #vdpComm($0000,VRAM,WRITE) >> 16
-    func_change_palette.swap(reg_D1);
-    func_change_palette.movel(reg_D1, addr_(VDP_control_port));
-
-    // Read the same info from A5 to deduce A1 (base address where to alter used palette)
-    func_change_palette.moveq(0, reg_D0);
-    func_change_palette.moveb(addr_(reg_A5, 0x1), reg_D0);
-    func_change_palette.mulu(0x50, reg_D0);
-    func_change_palette.addw(reg_D2, reg_D0);
-    func_change_palette.lea(addrw_(reg_A2, reg_D0), reg_A1);
-
-    // Send the tile (A1) with palette ID (D3) on the VDP Data port (A6)
-    func_change_palette.moveq(0, reg_D1);
-    func_change_palette.moveb(addr_(reg_A5, 0x2), reg_D1);
-    func_change_palette.label("loop");
-    func_change_palette.movew(addr_postinc_(reg_A1), reg_D0);
-    func_change_palette.addw(reg_D3, reg_D0);
-    func_change_palette.movew(reg_D0, addr_(reg_A6));
-    func_change_palette.dbra(reg_D1, "loop");
-
-    func_change_palette.label("return");
-    func_change_palette.rts();
-    uint32_t func_change_palette_addr = rom.inject_code(func_change_palette);
-
-    ////////////////
-
-    md::Code func_mark_fields;
-    func_mark_fields.lea(addr_(RAM_start), reg_A2);
-
-    func_mark_fields.movel(addr_(reg_A4, Info::CURRENT_OPTION_ADDR_OFFSET), reg_A5);
-    func_mark_fields.moveq(0, reg_D0);
-    func_mark_fields.movew(addr_(reg_A5), reg_D0);
-
-    func_mark_fields.movel(addr_(reg_A4, Info::SELECTION_MAPPINGS_OFFSET), reg_A5);
-    func_mark_fields.lea(addr_(VDP_data_port), reg_A6);
-
-    func_mark_fields.label("loop");
-    func_mark_fields.cmpb(addr_postinc_(reg_A5), reg_D0);
-    func_mark_fields.bmi("return");
-    func_mark_fields.bne("next_mapping");
-    func_mark_fields.jsr(func_change_palette_addr);
-    func_mark_fields.label("next_mapping");
-    func_mark_fields.addqw(0x3, reg_A5);
-    func_mark_fields.bra("loop");
-
-    func_mark_fields.label("return");
-    func_mark_fields.rts();
-
-    return rom.inject_code(func_mark_fields);
-}
-
-uint32_t Engine::inject_func_ui_main_loop(md::ROM& rom, uint32_t handle_ui_controls, uint32_t mark_fields, uint32_t wait_vsync) const
-{
-    md::Code func_gui_main_loop;
-    func_gui_main_loop.label("begin"); // routine running during level select
+    md::Code func;
+    func.label("begin"); // routine running during level select
 
     // Wait for the frame to be drawn by the VDP before processing another one
-    func_gui_main_loop.jsr(wait_vsync);
+    func.jsr(func_wait_vsync());
 
-    func_gui_main_loop.moveq(0, reg_D3); // Palette line 0
-    func_gui_main_loop.jsr(mark_fields); // 0x7F62
+    // Handle controls, calling callback functions that have been associated to the layout if matching buttons are pressed
+    func.jsr(func_handle_ui_controls());
 
-    func_gui_main_loop.jsr(handle_ui_controls);
+    // Copy the plane map to VRAM
+    func.jsr(func_copy_plane_map_to_vram());
 
-    func_gui_main_loop.movew(0x2000, reg_D3); // Palette line 1
-    func_gui_main_loop.jsr(mark_fields); // 0x7F62
+    func.bra("begin");
 
-    func_gui_main_loop.bra("begin");
-
-    return rom.inject_code(func_gui_main_loop);
+    // ------------------------------------------------------------------------------------------
+    _func_ui_main_loop = _rom.inject_code(func);
+    return _func_ui_main_loop;
 }
 
-uint32_t Engine::inject_func_init_ui(md::ROM& rom, uint32_t nemesis_decomp) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_init_ui()
 {
-    uint32_t gui_tileset_addr = rom.inject_bytes(GUI_TILESET, GUI_TILESET_SIZE);
+    if(_func_init_ui)
+        return _func_init_ui;
+    // ------------------------------------------------------------------------------------------
 
-    md::Code func_init_gui;
-    func_init_gui.move_to_sr(0x2700); // Disable VInts
+    uint32_t gui_tileset_addr = _rom.inject_bytes(GUI_TILESET, GUI_TILESET_SIZE);
+
+    md::Code func;
+    func.move_to_sr(0x2700); // Disable VInts
 //    func_init_gui.movew(addrw_(VDP_reg_1_command), reg_D0);  // 0xFFFFF60E
 //    func_init_gui.andib(0xBF, reg_D0);
 //    func_init_gui.movew(reg_D0, addr_(VDP_control_port));
 //    func_init_gui.jsr(Clear_DisplayData);     // 0x11CA
-    func_init_gui.lea(addr_(VDP_control_port), reg_A6);
-    func_init_gui.movew(0x8004, addr_(reg_A6));
-    func_init_gui.movew(0x8230, addr_(reg_A6));
-    func_init_gui.movew(0x8407, addr_(reg_A6));
-    func_init_gui.movew(0x8230, addr_(reg_A6));
-    func_init_gui.movew(0x8700, addr_(reg_A6));
-    func_init_gui.movew(0x8C81, addr_(reg_A6));
-    func_init_gui.movew(0x9001, addr_(reg_A6));
-    func_init_gui.movew(0x8B00, addr_(reg_A6));
+    func.lea(addr_(VDP_control_port), reg_A6);
+    func.movew(0x8004, addr_(reg_A6));
+    func.movew(0x8230, addr_(reg_A6));
+    func.movew(0x8407, addr_(reg_A6));
+    func.movew(0x8230, addr_(reg_A6));
+    func.movew(0x8700, addr_(reg_A6));
+    func.movew(0x8C81, addr_(reg_A6));
+    func.movew(0x9001, addr_(reg_A6));
+    func.movew(0x8B00, addr_(reg_A6));
 
 //    func_init_gui.clrw(addrw_(DMA_queue));  // 0xFFFFFB00
 //    func_init_gui.movel(DMA_queue, addrw_(DMA_queue_slot)); // 0xFFFFFBFC
-    func_init_gui.movel(0x42000000, addr_(VDP_control_port));
+    func.movel(0x42000000, addr_(VDP_control_port));
 
     // Decompress GUI tileset
-    func_init_gui.lea(addr_(gui_tileset_addr), reg_A0);
-    func_init_gui.jsr(nemesis_decomp);
+    func.lea(addr_(gui_tileset_addr), reg_A0);
+    func.jsr(func_nemesis_decomp());
 
-    func_init_gui.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
+    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
 
-    func_init_gui.rts();
+    func.rts();
 
-    return rom.inject_code(func_init_gui);
+    // ------------------------------------------------------------------------------------------
+    _func_init_ui = _rom.inject_code(func);
+    return _func_init_ui;
 }
 
-uint32_t Engine::inject_func_boot_ui(md::ROM& rom, uint32_t init_ui, uint32_t build_text_plane, uint32_t ui_main_loop) const
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_boot_ui()
 {
-    md::Code func_boot_gui;
+    if(_func_boot_ui)
+        return _func_boot_ui;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
 
     // Call the pre-init function if there is one
-    func_boot_gui.movel(addr_(reg_A4, Info::PREINIT_FUNC_OFFSET), reg_A1);
-    func_boot_gui.cmpa(lval_(0x0), reg_A1);
-    func_boot_gui.beq("after_preinit");
-    func_boot_gui.jsr(addr_(reg_A1));
+    func.movel(addr_(reg_A4, Info::PREINIT_FUNC_OFFSET), reg_A1);
+    func.cmpa(lval_(0x0), reg_A1);
+    func.beq("after_preinit");
+    func.jsr(addr_(reg_A1));
 
-    func_boot_gui.label("after_preinit");
-    func_boot_gui.jsr(init_ui);
-    func_boot_gui.jsr(build_text_plane);
+    func.label("after_preinit");
+    func.jsr(func_init_ui());
+    func.jsr(func_build_text_plane());
 
     // Init palette
     constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
-    func_boot_gui.lea(addr_(reg_A4, Info::COLOR_PALETTES_OFFSET), reg_A1);
-    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR));
-    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xC));
-    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xE));
+    func.lea(addr_(reg_A4, Info::COLOR_PALETTES_OFFSET), reg_A1);
+    func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR));
+    func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xC));
+    func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR + 0xE));
+
     constexpr uint16_t PALETTE_1_ADDR = PALETTE_0_ADDR + 0x20;
-    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xC));
-    func_boot_gui.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xE));
+    func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xC));
+    func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_1_ADDR + 0xE));
 
-    func_boot_gui.movew(0x8134, reg_D0);
-    func_boot_gui.orib(0x40, reg_D0);
-    func_boot_gui.movew(reg_D0, addr_(VDP_control_port));
+    func.movew(0x8134, reg_D0);
+    func.orib(0x40, reg_D0);
+    func.movew(reg_D0, addr_(VDP_control_port));
 
-    func_boot_gui.jsr(ui_main_loop);
-    func_boot_gui.rts();
+    func.movew(0x2000, reg_D3);
+    func.jsr(func_apply_selection_mapping());
 
-    return rom.inject_code(func_boot_gui);
+    func.jsr(func_ui_main_loop());
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_boot_ui = _rom.inject_code(func);
+    return _func_boot_ui;
 }
 
 } // namespace end

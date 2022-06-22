@@ -28,9 +28,9 @@ ByteArray Info::build_string_position_bytes() const
 ByteArray Info::build_selection_mapping_bytes() const
 {
     ByteArray bytes;
-    for(const auto& [selection_id, x, y, size] : _selection_mappings)
+    for(const auto& [option_id, x, y, size] : _selection_mappings)
     {
-        bytes.add_byte(selection_id);
+        bytes.add_byte(option_id);
         bytes.add_byte(x);
         bytes.add_byte(y);
         bytes.add_byte(size);
@@ -68,9 +68,6 @@ uint32_t Info::inject(md::ROM& rom)
     main_bytes_table.add_long(rom.inject_bytes(build_string_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_string_position_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_selection_mapping_bytes()));
-
-    main_bytes_table.add_long(_current_option_ram_addr);
-
     main_bytes_table.add_long(_preinit_function_addr);
 
     main_bytes_table.add_long(_on_up_pressed_addr);
@@ -82,18 +79,33 @@ uint32_t Info::inject(md::ROM& rom)
     main_bytes_table.add_long(_on_a_pressed_addr);
     main_bytes_table.add_long(_on_start_pressed_addr);
     main_bytes_table.add_bytes(build_palette_bytes());
+    main_bytes_table.add_byte(last_option_id());
+
+    this->extend_data_table(rom, main_bytes_table);
 
     _main_table_addr = rom.inject_bytes(main_bytes_table);
     return _main_table_addr;
 }
 
-uint8_t Info::max_selection() const
+void Info::add_string(uint8_t x, uint8_t y, const std::string& str)
 {
-    uint8_t highest_sel = 0;
-    for(const auto& [sel,_2,_3,_4] : _selection_mappings)
-        if(sel > highest_sel)
-            highest_sel = sel;
-    return highest_sel;
+    _strings.emplace_back(Text(str, {x, y}));
+}
+
+void Info::add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t option_id)
+{
+    this->add_string(x, y, str);
+    SelectionMapping mapping = { option_id, x, y, static_cast<uint8_t>(str.size()) };
+    _selection_mappings.emplace_back(mapping);
+}
+
+uint8_t Info::last_option_id() const
+{
+    uint8_t highest_option_id = 0;
+    for(const auto& [option_id,_2,_3,_4] : _selection_mappings)
+        if(option_id > highest_option_id)
+            highest_option_id = option_id;
+    return highest_option_id;
 }
 
 } // namespace mdui

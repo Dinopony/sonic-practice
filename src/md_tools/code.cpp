@@ -537,6 +537,21 @@ Code& Code::ori_to_ccr(uint8_t value)
     return *this;
 }
 
+Code& Code::eor(const DataRegister& dx, const Param& value, Size size)
+{
+    uint16_t size_code = 0x0;
+    if (size == Size::WORD)
+        size_code = 0x1;
+    else if (size == Size::LONG)
+        size_code = 0x2;
+
+    uint16_t opcode = 0xB100 + (dx.getXn() << 9) + (size_code << 6) + value.getMXn();
+    this->add_opcode(opcode);
+    this->add_bytes(value.getAdditionnalData());
+
+    return *this;
+}
+
 Code& Code::lsx(uint8_t bitcount, const DataRegister& reg, bool direction_left, md::Size size)
 {
     if(bitcount <= 7)

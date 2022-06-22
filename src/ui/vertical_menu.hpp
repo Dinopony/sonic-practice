@@ -2,30 +2,28 @@
 
 #include <utility>
 #include "info.hpp"
+#include <iostream>
 
 namespace mdui {
 
+class Engine;
 
 class VerticalMenu : public Info {
 private:
-    std::vector<std::vector<std::string>> _options;
+    std::vector<std::vector<std::string>> _option_values;
 
 public:
-    VerticalMenu(std::vector<Text> strings, std::vector<SelectionMapping> selection_mappings) :
-        Info(std::move(strings), std::move(selection_mappings))
-    {}
-
-    uint32_t inject(md::ROM& rom) override;
+    explicit VerticalMenu(md::ROM& rom, Engine& engine) :
+        Info()
+    {
+        this->on_down_pressed(this->inject_down_press_handler(rom, engine));
+        this->on_up_pressed(this->inject_up_press_handler(rom, engine));
+        std::cout << "Down press handler is at " << std::hex << this->on_down_pressed() << std::dec << std::endl;
+    }
 
 private:
-    uint32_t inject_down_press_handler(md::ROM& rom);
-    uint32_t inject_up_press_handler(md::ROM& rom);
-    // Up pressed: decrease selected option by one, looping to the end if needed
-
-
-    // TODO: on plane constitution, add options to the right
-
-    // TODO: on init, load options from SRAM
+    uint32_t inject_down_press_handler(md::ROM& rom, Engine& engine) const;
+    uint32_t inject_up_press_handler(md::ROM& rom, Engine& engine) const;
 };
 
 

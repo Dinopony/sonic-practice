@@ -9,11 +9,11 @@ namespace md { class ROM; }
 
 namespace mdui {
 
-/// <selection_id, x, y, size>
-typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
-
 /// <r, g, b>
 typedef std::tuple<uint8_t, uint8_t, uint8_t> Color;
+
+/// <option, x, y, size>
+typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
 
 class Info {
 private:
@@ -23,8 +23,6 @@ private:
     Color _background_color = {0x2,0x2,0x2};
     std::pair<Color, Color> _text_color_palette_neutral = { {0x8,0x8,0x8}, {0xA,0xA,0xA} };
     std::pair<Color, Color> _text_color_palette_selected = { {0xF,0xA,0x0}, {0xF,0xC,0x4} };
-
-    uint32_t _current_option_ram_addr = 0xFFFF0001; ///< the RAM address where the currently selected option is stored (byte)
 
     uint32_t _preinit_function_addr = 0;
 
@@ -43,24 +41,20 @@ public:
     static constexpr uint32_t STRINGS_OFFSET = 0;
     static constexpr uint32_t STRING_POSITIONS_OFFSET = STRINGS_OFFSET + 0x4;
     static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRING_POSITIONS_OFFSET + 0x4;
-    static constexpr uint16_t CURRENT_OPTION_ADDR_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
-    static constexpr uint32_t PREINIT_FUNC_OFFSET = CURRENT_OPTION_ADDR_OFFSET + 0x4;
+    static constexpr uint32_t PREINIT_FUNC_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
     static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = PREINIT_FUNC_OFFSET + 0x4;
     static constexpr uint32_t COLOR_PALETTES_OFFSET = CONTROLLER_EVENTS_OFFSET + (0x4 * 8);
+    static constexpr uint8_t LAST_OPTION_ID_OFFSET = COLOR_PALETTES_OFFSET + (0x2 * 5);
+    static constexpr uint32_t INFO_END_OFFSET = LAST_OPTION_ID_OFFSET + 1;
 
-    Info(std::vector<Text> strings, std::vector<SelectionMapping> selection_mappings) :
-        _strings            (std::move(strings)),
-        _selection_mappings (std::move(selection_mappings))
-    {}
+    Info() = default;
 
     virtual uint32_t inject(md::ROM& rom);
 
     [[nodiscard]] const std::vector<Text>& strings() const { return _strings; }
     [[nodiscard]] const std::vector<SelectionMapping>& selection_mappings() const { return _selection_mappings; }
-    [[nodiscard]] uint8_t max_selection() const;
-
-    [[nodiscard]] uint32_t current_option_ram_addr() const { return _current_option_ram_addr; }
-    void current_option_ram_addr(uint32_t addr) { _current_option_ram_addr = addr; }
+    void add_string(uint8_t x, uint8_t y, const std::string& str);
+    void add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t option_id);
 
     [[nodiscard]] uint32_t preinit_function_addr() const { return _preinit_function_addr; }
     void preinit_function_addr(uint32_t addr) { _preinit_function_addr = addr; }
@@ -98,6 +92,8 @@ public:
     [[nodiscard]] const std::pair<Color, Color>& text_color_palette_selected() const { return _text_color_palette_selected; }
     void text_color_palette_selected(const std::pair<Color, Color>& colors) { _text_color_palette_selected = colors; }
 
+    [[nodiscard]] uint8_t last_option_id() const;
+
     [[nodiscard]] uint32_t main_table_address() const {
         if(!_main_table_addr)
             throw std::exception();
@@ -109,6 +105,8 @@ private:
     [[nodiscard]] ByteArray build_string_position_bytes() const;
     [[nodiscard]] ByteArray build_selection_mapping_bytes() const;
     [[nodiscard]] ByteArray build_palette_bytes() const;
+
+    virtual void extend_data_table(md::ROM& rom, ByteArray& data_table) const {}
 };
 
 } // namespace end

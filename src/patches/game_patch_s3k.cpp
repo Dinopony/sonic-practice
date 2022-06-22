@@ -37,6 +37,8 @@ void GamePatchS3K::display_additionnal_hud_on_pause(md::ROM& rom)
 
 static uint32_t inject_func_preinit_s3k(md::ROM& rom)
 {
+    // constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
+    // constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
     constexpr uint32_t Sprite_table_input = 0xFFFFAC00;
     constexpr uint32_t Object_RAM_Start = 0xFFFFB000;
 
@@ -86,30 +88,6 @@ static uint32_t inject_func_preinit_s3k(md::ROM& rom)
 
 void GamePatchS3K::add_settings_menu(md::ROM& rom)
 {
-    std::vector<mdui::Text> strings = {
-            mdui::Text("CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,1}    ),
-            mdui::Text("EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,3}    ),
-            mdui::Text("SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,5}    ),
-            mdui::Text("MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,7}    ),
-            mdui::Text("LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", {1,9}    ),
-            mdui::Text("TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", {1,11}   ),
-            mdui::Text("ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,15}   ),
-            mdui::Text("SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", {1,17}   ),
-            mdui::Text("______________________________________", {1,25}   ),
-            mdui::Text("                     a PLAY    b BACK ", {1,26}   )
-    };
-
-    std::vector<mdui::SelectionMapping> selection_mappings = {
-            { 0, 1, 1,  38 },
-            { 1, 1, 3,  38 },
-            { 2, 1, 5,  38 },
-            { 3, 1, 7,  38 },
-            { 4, 1, 9,  38 },
-            { 5, 1, 11, 38 },
-            { 6, 1, 15, 38 },
-            { 7, 1, 17, 38 }
-    };
-
     /*
     const std::vector<std::vector<std::string>> SELECTION_OPTIONS = {
         { "SONIC AND TAILS", "SONIC", "TAILS", "KNUCKLES" },
@@ -122,24 +100,29 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
           "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
     };
 
-    constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
-    constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
-
     // Can store property values in $F664-$F67F
      */
-    constexpr uint32_t Level_select_option = 0xFFFFFF82;
+    mdui::Engine ui_engine(rom);
 
-    mdui::VerticalMenu settings_ui(strings, selection_mappings);
+    mdui::VerticalMenu settings_ui(rom, ui_engine);
     settings_ui.preinit_function_addr(inject_func_preinit_s3k(rom));
-    settings_ui.current_option_ram_addr(Level_select_option);
+
+    settings_ui.add_option(1, 1,  "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", 0);
+    settings_ui.add_option(1, 3,  "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 1);
+    settings_ui.add_option(1, 5,  "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 2);
+    settings_ui.add_option(1, 7,  "MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 3);
+    settings_ui.add_option(1, 9,  "LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", 4);
+    settings_ui.add_option(1, 11, "TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", 5);
+    settings_ui.add_option(1, 17, "ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 6);
+    settings_ui.add_option(1, 19, "SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 7);
+    settings_ui.add_string(1, 25, "______________________________________");
+    settings_ui.add_string(22, 26, "a PLAY    b BACK");
 
     uint32_t gui_info_addr = settings_ui.inject(rom);
-
-    mdui::Engine ui_engine(0xFFFFCFCC, 0xFFFFFF80);
-    uint32_t func_boot_gui_addr = ui_engine.inject(rom);
+    std::cout << "UI descriptor table is at " << std::hex << gui_info_addr << std::dec << std::endl;
 
     md::Code proc_launch_gui;
     proc_launch_gui.lea(addr_(gui_info_addr), reg_A4);
-    proc_launch_gui.jmp(func_boot_gui_addr);
+    proc_launch_gui.jmp(ui_engine.func_boot_ui());
     rom.set_long(0x4C6, rom.inject_code(proc_launch_gui));
 }

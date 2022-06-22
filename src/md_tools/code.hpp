@@ -112,7 +112,6 @@ namespace md
         Code& subw(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->sub(param, reg, Size::WORD, param_minus_reg); }
         Code& subl(const Param& param, const DataRegister& reg, bool param_minus_reg = false) { return this->sub(param, reg, Size::LONG, param_minus_reg); }
 
-
         Code& mulu(const Param& value, const DataRegister& dx);
         Code& mulu(uint16_t value, const DataRegister& dx) { return this->mulu(wval_(value), dx); }
 
@@ -150,6 +149,11 @@ namespace md
         Code& oril(uint32_t value, const Param& target) { return this->ori(ImmediateValue(value), target, Size::LONG); }
 
         Code& ori_to_ccr(uint8_t value);
+
+        Code& eor(const DataRegister& dx, const Param& value, Size size);
+        Code& eorb(const DataRegister& dx, const Param& param) { return this->eor(dx, param, Size::BYTE); }
+        Code& eorw(const DataRegister& dx, const Param& param) { return this->eor(dx, param, Size::WORD); }
+        Code& eorl(const DataRegister& dx, const Param& param) { return this->eor(dx, param, Size::LONG); }
 
         Code& lsx(uint8_t bitcount, const DataRegister& reg, bool direction_left, md::Size size);
 

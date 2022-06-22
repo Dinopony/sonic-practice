@@ -1,55 +1,51 @@
 #include "vertical_menu.hpp"
-#include "../md_tools/md_tools.hpp"
+#include "engine.hpp"
 
 namespace mdui {
 
-uint32_t VerticalMenu::inject(md::ROM& rom)
-{
-    this->on_down_pressed(this->inject_down_press_handler(rom));
-    this->on_up_pressed(this->inject_up_press_handler(rom));
+constexpr uint32_t RAM_start = 0xFFFF0000;
+constexpr uint32_t VDP_data_port = 0xC00000;
+constexpr uint32_t VDP_control_port = 0xC00004;
 
-    return Info::inject(rom);
+uint32_t VerticalMenu::inject_down_press_handler(md::ROM& rom, Engine& engine) const
+{
+    md::Code func;
+    func.movem_to_stack({ reg_D0 }, {});
+
+    func.clrl(reg_D0);
+    func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
+    func.addqb(1, reg_D0);
+    func.cmpb(addr_(reg_A4, Info::LAST_OPTION_ID_OFFSET), reg_D0);
+    func.ble("no_overflow");
+    func.moveq(0, reg_D0); // In case of an overflow, loop back to option 0
+    func.label("no_overflow");
+    func.jsr(engine.func_set_selected_option());
+
+    func.movem_from_stack({ reg_D0 }, {});
+    func.rts();
+
+    return rom.inject_code(func);
 }
 
-uint32_t VerticalMenu::inject_down_press_handler(md::ROM& rom)
+uint32_t VerticalMenu::inject_up_press_handler(md::ROM& rom, Engine& engine) const
 {
-    // Up pressed: increased selected option by one, looping back to start if needed
-    md::Code down_press_handler;
+    md::Code func;
+    func.movem_to_stack({ reg_D0 }, {});
 
-    down_press_handler.movem_to_stack({ reg_D0 }, {});
-    down_press_handler.movew(addrw_(this->current_option_ram_addr()), reg_D0);
-    down_press_handler.addqw(1, reg_D0);
-    down_press_handler.cmpiw(this->max_selection(), reg_D0);
-    down_press_handler.ble("commit_down");
-    down_press_handler.moveq(0, reg_D0);
-    down_press_handler.label("commit_down");
-    down_press_handler.movew(reg_D0, addrw_(this->current_option_ram_addr()));
-    if(this->on_down_pressed())
-        down_press_handler.jsr(this->on_down_pressed());
-    down_press_handler.movem_from_stack({ reg_D0 }, {});
-    down_press_handler.rts();
+    func.clrl(reg_D0);
+    func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
+    func.subqb(1, reg_D0);
+    func.bcc("no_underflow");
+    func.moveb(addr_(reg_A4, Info::LAST_OPTION_ID_OFFSET), reg_D0); // In case of an underflow, loop back to last option
+    func.label("no_underflow");
+    func.jsr(engine.func_set_selected_option());
 
-    return rom.inject_code(down_press_handler);
+    func.movem_from_stack({ reg_D0 }, {});
+    func.rts();
+
+    return rom.inject_code(func);
 }
 
-uint32_t VerticalMenu::inject_up_press_handler(md::ROM& rom)
-{
-    // Up pressed: decrease selected option by one, looping to the end if needed
-    md::Code up_press_handler;
 
-    up_press_handler.movem_to_stack({ reg_D0 }, {});
-    up_press_handler.movew(addrw_(this->current_option_ram_addr()), reg_D0);
-    up_press_handler.subqw(1, reg_D0);
-    up_press_handler.bcc("commit_up");
-    up_press_handler.moveq(this->max_selection(), reg_D0);
-    up_press_handler.label("commit_up");
-    up_press_handler.movew(reg_D0, addrw_(this->current_option_ram_addr()));
-    if(this->on_up_pressed())
-        up_press_handler.jsr(this->on_up_pressed());
-    up_press_handler.movem_from_stack({ reg_D0 }, {});
-    up_press_handler.rts();
-
-    return rom.inject_code(up_press_handler);
-}
 
 } // namespace mdui
