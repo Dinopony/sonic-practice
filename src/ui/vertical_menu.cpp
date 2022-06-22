@@ -15,7 +15,7 @@ uint32_t VerticalMenu::inject_down_press_handler(md::ROM& rom, Engine& engine) c
     func.clrl(reg_D0);
     func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
     func.addqb(1, reg_D0);
-    func.cmpb(addr_(reg_A4, Info::LAST_OPTION_ID_OFFSET), reg_D0);
+    func.cmpw(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D0);
     func.ble("no_overflow");
     func.moveq(0, reg_D0); // In case of an overflow, loop back to option 0
     func.label("no_overflow");
@@ -36,7 +36,7 @@ uint32_t VerticalMenu::inject_up_press_handler(md::ROM& rom, Engine& engine) con
     func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
     func.subqb(1, reg_D0);
     func.bcc("no_underflow");
-    func.moveb(addr_(reg_A4, Info::LAST_OPTION_ID_OFFSET), reg_D0); // In case of an underflow, loop back to last option
+    func.movew(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D0); // In case of an underflow, loop back to last option
     func.label("no_underflow");
     func.jsr(engine.func_set_selected_option());
 
@@ -46,6 +46,29 @@ uint32_t VerticalMenu::inject_up_press_handler(md::ROM& rom, Engine& engine) con
     return rom.inject_code(func);
 }
 
+/*
+uint32_t VerticalMenu::inject_left_press_handler(md::ROM& rom, Engine& engine) const
+{
+    md::Code func;
+    func.movem_to_stack({}, {});
 
+    // Read the currently selected option value and store it in D1
+    func.clrl(reg_D0);
+    func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
+    func.lea(addrw_(engine.option_values_start_ram_addr()), reg_A0);
+    func.clrl(reg_D1);
+    func.moveb(addrw_(reg_A0, reg_D0), reg_D1);
+
+    func.subqb(1, reg_D1);
+    func.bcc("no_underflow");
+    func.moveb(MAX_VALUE_FOR_OPTION(reg_D0), reg_D1); // In case of an underflow, loop back to last option
+    func.label("no_underflow");
+    func.jsr(engine.func_set_option_value());
+
+    func.movem_from_stack({}, {});
+    func.rts();
+
+    return rom.inject_code(func);
+}*/
 
 } // namespace mdui

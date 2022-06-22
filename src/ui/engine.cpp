@@ -6,7 +6,6 @@
 
 namespace mdui {
 
-// TODO: add option values to the right
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
 
@@ -22,6 +21,93 @@ constexpr uint8_t UI_MODE_ENABLED = 0x1;
 constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
 
 #include "../../assets/gui_tileset.bin.hxx"
+
+/**
+ * Draw the text of a given value for the given option.
+ *
+ * Input:
+ *      - D0.b: option to draw the value for
+ *      - D1.b: option value to draw
+ */
+uint32_t Engine::func_draw_option_value()
+{
+    if(_func_draw_option_value)
+        return _func_draw_option_value;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D1 }, { reg_A1 });
+
+    func.lea(addr_(reg_A4, Info::OPTION_VALUES_OFFSET), reg_A1);
+    func.andil(0x000000FF, reg_D0);
+    func.lslw(2, reg_D0);
+    func.adda(reg_D0, reg_A1);
+    func.movel(addr_(reg_A1), reg_A1);
+    func.addql(0x2, reg_A1);
+
+    func.label("loop_skip_texts");
+    func.tstb(reg_D1);
+    func.beq("draw_text");
+    func.addql(0x2, reg_A1);
+    func.moveb(addr_postinc_(reg_A1), reg_D0);
+    func.addqb(0x1, reg_D0);
+    func.adda(reg_D0, reg_A1);
+    // Skip the padding byte if there is one
+    func.cmpib(0xFE, addr_(reg_A1));
+    func.bne("no_padding_byte");
+    func.addql(0x1, reg_A1);
+    func.label("no_padding_byte");
+    func.subqb(0x1, reg_D1);
+    func.bra("loop_skip_texts");
+
+    func.label("draw_text");
+    func.jsr(func_draw_text());
+
+    func.movem_from_stack({ reg_D0,reg_D1 }, { reg_A1 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_draw_option_value = _rom.inject_code(func);
+    return _func_draw_option_value;
+}
+
+/**
+ * TODO doc
+ */
+uint32_t Engine::func_draw_all_option_values()
+{
+    if(_func_draw_all_option_values)
+        return _func_draw_all_option_values;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0, reg_D1 }, { reg_A1 });
+
+    func.clrl(reg_D2);
+    func.movew(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D2);
+
+    func.lea(addr_(_option_values_start_ram_addr), reg_A1);
+    func.clrl(reg_D0);
+
+    func.label("loop");
+    // D0 contains the currently processed option
+    // Store the option value ID in D1
+    func.moveb(addr_postinc_(reg_A1), reg_D1);
+    func.jsr(func_draw_option_value());
+    func.addqb(1, reg_D0);
+    func.cmpb(reg_D2, reg_D0);
+    func.bgt("return");
+    func.bra("loop");
+
+    func.label("return");
+    func.movew(0xFFFF, addr_postinc_(reg_A6));
+    func.movem_from_stack({ reg_D0, reg_D1 }, {  reg_A1 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_draw_all_option_values = _rom.inject_code(func);
+    return _func_draw_all_option_values;
+}
 
 /**
  * Changes the currently selected option, updating the layout accordingly using the selection mappings
@@ -391,20 +477,24 @@ uint32_t Engine::func_copy_plane_map_to_vram()
  * TODO doc
  *
  * Input:
- *      - A1: string contents starting address
- *      - A3: Plane map starting address
- *      - D3.w: plane map offset where to draw the string
+ *      - A1: pointer on the text structure
  */
-uint32_t Engine::func_draw_string()
+uint32_t Engine::func_draw_text()
 {
-    if(_func_draw_string)
-        return _func_draw_string;
+    if(_func_draw_text)
+        return _func_draw_text;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
 
-    // Puts the exact RAM address where to write in A2
+    // Put the plane map starting address in A3
+    func.lea(addr_(RAM_start), reg_A3);
+
+    // Read the string position (D3), then use it to deduce plane map address where to draw the string (A2)
+    func.movew(addr_postinc_(reg_A1), reg_D3);
     func.lea(addrw_(reg_A3, reg_D3), reg_A2);
+
     // Store the string size (first byte of the string) in D2
     func.moveq(0, reg_D2);
     func.moveb(addr_postinc_(reg_A1), reg_D2);
@@ -414,11 +504,13 @@ uint32_t Engine::func_draw_string()
     func.moveb(addr_postinc_(reg_A1), reg_D0);
     func.movew(reg_D0, addr_postinc_(reg_A2));
     func.dbra(reg_D2, "loop_write_letter");
+
+    func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_draw_string = _rom.inject_code(func);
-    return _func_draw_string;
+    _func_draw_text = _rom.inject_code(func);
+    return _func_draw_text;
 }
 
 /**
@@ -432,17 +524,15 @@ uint32_t Engine::func_build_initial_text_plane()
 
     md::Code func;
 
-    func.lea(addr_(RAM_start), reg_A3);
     func.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
     func.moveq(0, reg_D0);
 
     // Double loop to write each letter of each line of text
     func.label("loop_write_string");
-    func.movew(addr_postinc_(reg_A1), reg_D3);
     // If string position is 0xFFFF, it means we reached end of table
-    func.cmpiw(0xFFFF, reg_D3);
+    func.cmpiw(0xFFFF, addr_(reg_A1));
     func.beq("complete");
-    func.jsr(func_draw_string());
+    func.jsr(func_draw_text());
     func.cmpib(0xFE, addr_(reg_A1));
     func.bne("loop_write_string");
     // If next byte is 0xFE, it's a padding byte we need to skip (because reading words on odd addresses is illegal)
@@ -627,6 +717,8 @@ uint32_t Engine::func_boot_ui()
 
     func.movew(0x2000, reg_D3);
     func.jsr(func_apply_selection_mapping());
+
+    func.jsr(func_draw_all_option_values());
 
     func.jsr(func_ui_main_loop());
     func.rts();

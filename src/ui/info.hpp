@@ -17,6 +17,7 @@ class Info {
 private:
     std::vector<Text> _strings;
     std::vector<SelectionMapping> _selection_mappings;
+    std::vector<std::vector<Text>> _option_values;
 
     Color _background_color = {0x2,0x2,0x2};
     std::pair<Color, Color> _text_color_palette_neutral = { {0x8,0x8,0x8}, {0xA,0xA,0xA} };
@@ -35,12 +36,11 @@ private:
 
 public:
     static constexpr uint32_t STRINGS_OFFSET = 0;
-    static constexpr uint32_t STRING_POSITIONS_OFFSET = STRINGS_OFFSET + 0x4;
-    static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRING_POSITIONS_OFFSET + 0x4;
+    static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRINGS_OFFSET + 0x4;
     static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
     static constexpr uint32_t COLOR_PALETTES_OFFSET = CONTROLLER_EVENTS_OFFSET + (0x4 * 8);
-    static constexpr uint8_t LAST_OPTION_ID_OFFSET = COLOR_PALETTES_OFFSET + (0x2 * 5);
-    static constexpr uint32_t INFO_END_OFFSET = LAST_OPTION_ID_OFFSET + 1;
+    static constexpr uint32_t OPTION_COUNT_OFFSET = COLOR_PALETTES_OFFSET + (0x2 * 5);
+    static constexpr uint32_t OPTION_VALUES_OFFSET = OPTION_COUNT_OFFSET + 2;
 
     Info() = default;
 
@@ -49,7 +49,7 @@ public:
     [[nodiscard]] const std::vector<Text>& strings() const { return _strings; }
     [[nodiscard]] const std::vector<SelectionMapping>& selection_mappings() const { return _selection_mappings; }
     void add_string(uint8_t x, uint8_t y, const std::string& str);
-    void add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t option_id);
+    void add_selectable_option(uint8_t x, uint8_t y, const std::string& str, const std::vector<std::string>& value_strings = {});
 
     [[nodiscard]] uint32_t on_down_pressed() const { return _on_down_pressed_addr; }
     void on_down_pressed(uint32_t addr) { _on_down_pressed_addr = addr; }
@@ -93,12 +93,9 @@ public:
     }
 
 private:
-    [[nodiscard]] ByteArray build_string_bytes() const;
-    [[nodiscard]] ByteArray build_string_position_bytes() const;
     [[nodiscard]] ByteArray build_selection_mapping_bytes() const;
     [[nodiscard]] ByteArray build_palette_bytes() const;
-
-    virtual void extend_data_table(md::ROM& rom, ByteArray& data_table) const {}
+    [[nodiscard]] ByteArray build_option_values_bytes(md::ROM& rom) const;
 };
 
 } // namespace end

@@ -88,30 +88,33 @@ static uint32_t inject_func_preinit_s3k(md::ROM& rom)
 
 void GamePatchS3K::add_settings_menu(md::ROM& rom)
 {
-    /*
-    const std::vector<std::vector<std::string>> SELECTION_OPTIONS = {
-        { "SONIC AND TAILS", "SONIC", "TAILS", "KNUCKLES" },
-        { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14" },
-        { "NONE", "LIGHTNING", "FIRE", "WATER" },
-        { "ENABLED", "DISABLED" },
-        { "YES", "NO" },
-        { "ENABLED", "DISABLED" },
-        { "ANGEL ISLAND", "HYDROCITY", "MARBLE GARDEN", "CARNIVAL NIGHT", "ICECAP", "LAUNCH BASE", "MUSHROOM HILL",
-          "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
+    // Can store property values in $F664-$F67F
+    const std::vector<std::string> CHARACTERS_LIST = {
+            "SONIC + TAILS", "SONIC", "TAILS", "KNUCKLES"
+    };
+    const std::vector<std::string> SHIELDS_LIST = {
+            "NONE", "LIGHTNING", "FIRE", "WATER"
+    };
+    const std::vector<std::string> EMERALDS_LIST = {
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"
+    };
+    const std::vector<std::string> ZONES_LIST = {
+        "ANGEL ISLAND", "HYDROCITY", "MARBLE GARDEN", "CARNIVAL NIGHT", "ICECAP", "LAUNCH BASE", "MUSHROOM HILL",
+        "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY"
     };
 
     uint32_t func_s3k_preinit = inject_func_preinit_s3k(rom);
     mdui::Engine ui_engine(rom, func_s3k_preinit);
 
     mdui::VerticalMenu settings_ui(rom, ui_engine);
-    settings_ui.add_option(1, 1,  "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", 0);
-    settings_ui.add_option(1, 3,  "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 1);
-    settings_ui.add_option(1, 5,  "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 2);
-    settings_ui.add_option(1, 7,  "MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 3);
-    settings_ui.add_option(1, 9,  "LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", 4);
-    settings_ui.add_option(1, 11, "TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", 5);
-    settings_ui.add_option(1, 17, "ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 6);
-    settings_ui.add_option(1, 19, "SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 7);
+    settings_ui.add_selectable_option(1, 1,  "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", CHARACTERS_LIST);
+    settings_ui.add_selectable_option(1, 3,  "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", EMERALDS_LIST);
+    settings_ui.add_selectable_option(1, 5,  "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", SHIELDS_LIST);
+    settings_ui.add_selectable_option(1, 7,  "MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", { "ON", "OFF" });
+    settings_ui.add_selectable_option(1, 9,  "LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", { "NO", "YES" });
+    settings_ui.add_selectable_option(1, 11, "TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", { "OFF", "ON" });
+    settings_ui.add_selectable_option(1, 17, "ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", ZONES_LIST);
+    settings_ui.add_selectable_option(1, 19, "SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", { "ACT 1", "ACT 2"});
     settings_ui.add_string(1, 25, "______________________________________");
     settings_ui.add_string(22, 26, "a PLAY    b BACK");
 
@@ -122,4 +125,6 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
     proc_launch_gui.lea(addr_(gui_info_addr), reg_A4);
     proc_launch_gui.jmp(ui_engine.func_boot_ui());
     rom.set_long(0x4C6, rom.inject_code(proc_launch_gui));
+
+    std::cout << "func_draw_option_value is at " << std::hex << ui_engine.func_draw_option_value() << std::dec << std::endl;
 }

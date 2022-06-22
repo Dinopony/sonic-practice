@@ -41,6 +41,7 @@ public:
 
         this->game_specific_patches(rom);
         std::cout << (empty - rom.remaining_empty_bytes()) << " consumed bytes" << std::endl;
+        std::cout << (rom.remaining_empty_bytes()) << " remaining bytes" << std::endl;
     }
 };
 
