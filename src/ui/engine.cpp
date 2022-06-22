@@ -6,8 +6,7 @@
 
 namespace mdui {
 
-// TODO: fix our own controller poll function which produces weird bits
-// TODO: on plane constitution, add options to the right
+// TODO: add option values to the right
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
 
@@ -69,6 +68,7 @@ uint32_t Engine::func_set_selected_option()
  *      - A1: Target address
  *      - Input
  */
+ /*
 uint32_t Engine::func_coords_to_plane_map_address()
 {
     if(_func_coords_to_plane_map_address)
@@ -89,16 +89,15 @@ uint32_t Engine::func_coords_to_plane_map_address()
     // ------------------------------------------------------------------------------------------
     _func_coords_to_plane_map_address = _rom.inject_code(func);
     return _func_coords_to_plane_map_address;
-}
+}*/
 
 /**
  * Change the palette of N consecutive tiles, starting at the given address.
  *
  * Input:
- *      - D1.b: X start position
- *      - D2.b: Y start position
+ *      - D1.w: Position offset of the first tile to change
+ *      - D2.l: Number of consecutive tiles to change
  *      - D3.w: Palette mask to apply (0x0000, 0x2000, 0x4000, 0x6000 for palettes 0, 1, 2, 3 respectively)
- *      - D4.l: Number of consecutive tiles to change
  *
  *      - A2: Plane map starting address
  */
@@ -109,21 +108,21 @@ uint32_t Engine::func_set_palette()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({ reg_D0 }, {});
+    func.movem_to_stack({ reg_D0 }, { reg_A1 });
 
-    // Use the coordinates to deduce A1 (base address where to alter used palette)
-    func.jsr(func_coords_to_plane_map_address());
+    // Deduce the first tile address from plane map starting address (A2) and first tile offset (D1)
+    func.lea(addr_(reg_A2, reg_D1), reg_A1);
 
     // Change the palette for the D4 consecutive tiles
     func.label("loop");
     func.movew(addr_(reg_A1), reg_D0);
     func.andiw(0x9FFF, reg_D0);
-    func.addw(reg_D3, reg_D0);
+    func.orw(reg_D3, reg_D0);
     func.movew(reg_D0, addr_postinc_(reg_A1));
-    func.dbra(reg_D4, "loop");
+    func.dbra(reg_D2, "loop");
 
     func.label("return");
-    func.movem_from_stack({ reg_D0 }, {});
+    func.movem_from_stack({ reg_D0 }, { reg_A1 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -173,12 +172,10 @@ uint32_t Engine::func_apply_selection_mapping()
     func.bne("next_mapping");
 
     // Selected option found: read X, Y and Size, then call the palette change function
-    func.clrl(reg_D1);
-    func.moveb(addr_postinc_(reg_A3), reg_D1); // X in D1
     func.clrl(reg_D2);
-    func.moveb(addr_postinc_(reg_A3), reg_D2); // Y in D2
-    func.clrl(reg_D4);
-    func.moveb(addr_postinc_(reg_A3), reg_D4); // Size in D4
+    func.moveb(addr_postinc_(reg_A3), reg_D2); // Size in D2.b
+    func.clrl(reg_D1);
+    func.movew(addr_postinc_(reg_A3), reg_D1); // Position offset in D1.w
     func.jsr(func_set_palette());
     func.bra("loop");
 

@@ -28,14 +28,8 @@ ByteArray Info::build_string_position_bytes() const
 ByteArray Info::build_selection_mapping_bytes() const
 {
     ByteArray bytes;
-    for(const auto& [option_id, x, y, size] : _selection_mappings)
-    {
-        bytes.add_byte(option_id);
-        bytes.add_byte(x);
-        bytes.add_byte(y);
-        bytes.add_byte(size);
-    }
-
+    for(const SelectionMapping& mapping : _selection_mappings)
+        bytes.add_bytes(mapping.as_bytes());
     bytes.add_byte(0xFF);
     return bytes;
 }
@@ -89,7 +83,7 @@ uint32_t Info::inject(md::ROM& rom)
 
 void Info::add_string(uint8_t x, uint8_t y, const std::string& str)
 {
-    _strings.emplace_back(Text(str, {x, y}));
+    _strings.emplace_back(Text(str, x, y));
 }
 
 void Info::add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t option_id)
@@ -102,9 +96,9 @@ void Info::add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t opti
 uint8_t Info::last_option_id() const
 {
     uint8_t highest_option_id = 0;
-    for(const auto& [option_id,_2,_3,_4] : _selection_mappings)
-        if(option_id > highest_option_id)
-            highest_option_id = option_id;
+    for(const SelectionMapping& mapping : _selection_mappings)
+        if(mapping.option_id > highest_option_id)
+            highest_option_id = mapping.option_id;
     return highest_option_id;
 }
 

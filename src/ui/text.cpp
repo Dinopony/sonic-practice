@@ -34,9 +34,4 @@ ByteArray Text::text_bytes() const
     return output;
 }
 
-uint16_t Text::position_bytes() const
-{
-    return (_position.first * 2) + (0x50 * _position.second);
-}
-
 } // namespace end

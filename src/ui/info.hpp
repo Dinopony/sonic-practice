@@ -4,6 +4,7 @@
 #include <array>
 
 #include "text.hpp"
+#include "selection_mapping.hpp"
 
 namespace md { class ROM; }
 
@@ -11,9 +12,6 @@ namespace mdui {
 
 /// <r, g, b>
 typedef std::tuple<uint8_t, uint8_t, uint8_t> Color;
-
-/// <option, x, y, size>
-typedef std::tuple<uint8_t, uint8_t, uint8_t, uint8_t> SelectionMapping;
 
 class Info {
 private:
