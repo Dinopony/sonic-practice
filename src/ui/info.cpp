@@ -8,18 +8,12 @@ ByteArray Info::build_string_bytes() const
     ByteArray bytes;
 
     for(const Text& str : _strings)
-        bytes.add_bytes(str.text_bytes());
-    bytes.add_byte(0xFF);
-
-    return bytes;
-}
-
-ByteArray Info::build_string_position_bytes() const
-{
-    ByteArray bytes;
-
-    for(const Text& str : _strings)
-        bytes.add_word(str.position_bytes());
+    {
+        bytes.add_bytes(str.as_bytes());
+        // Add a padding byte containing recognizable 0xFE in case we land on an odd address
+        if(bytes.size() % 2 != 0)
+            bytes.add_byte(0xFE);
+    }
     bytes.add_word(0xFFFF);
 
     return bytes;
@@ -60,7 +54,6 @@ uint32_t Info::inject(md::ROM& rom)
 
     ByteArray main_bytes_table;
     main_bytes_table.add_long(rom.inject_bytes(build_string_bytes()));
-    main_bytes_table.add_long(rom.inject_bytes(build_string_position_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_selection_mapping_bytes()));
 
     main_bytes_table.add_long(_on_up_pressed_addr);

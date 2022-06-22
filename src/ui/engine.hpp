@@ -52,7 +52,7 @@ public:
     void current_option_ram_addr(uint32_t addr) { _current_option_ram_addr = addr; }
 
     uint32_t func_set_selected_option();
-    uint32_t func_coords_to_plane_map_address();
+//    uint32_t func_coords_to_plane_map_address();
     uint32_t func_set_palette();
     uint32_t func_apply_selection_mapping();
 
@@ -63,7 +63,7 @@ public:
     uint32_t func_poll_controller();
     uint32_t func_v_int();
     uint32_t func_init_ui();
-    uint32_t func_build_text_plane();
+    uint32_t func_build_initial_text_plane();
     uint32_t func_handle_ui_controls();
     uint32_t func_ui_main_loop();
     uint32_t func_boot_ui();

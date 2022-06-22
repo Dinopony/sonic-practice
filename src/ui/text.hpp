@@ -21,8 +21,7 @@ public:
     [[nodiscard]] const std::string& string() const { return _str; }
     [[nodiscard]] const Position& position() const { return _position; }
 
-    [[nodiscard]] ByteArray text_bytes() const;
-    [[nodiscard]] uint16_t position_bytes() const { return _position.as_offset_word(); }
+    [[nodiscard]] ByteArray as_bytes() const;
 };
 
 } // namespace end

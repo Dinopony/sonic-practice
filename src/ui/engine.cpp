@@ -391,9 +391,9 @@ uint32_t Engine::func_copy_plane_map_to_vram()
  * TODO doc
  *
  * Input:
- *      - A1: string starting address
- *      - A3: RAM graphics buffer start
- *      - D3.w: string position
+ *      - A1: string contents starting address
+ *      - A3: Plane map starting address
+ *      - D3.w: plane map offset where to draw the string
  */
 uint32_t Engine::func_draw_string()
 {
@@ -424,7 +424,7 @@ uint32_t Engine::func_draw_string()
 /**
  * TODO doc
  */
-uint32_t Engine::func_build_text_plane()
+uint32_t Engine::func_build_initial_text_plane()
 {
     if(_func_build_text_plane)
         return _func_build_text_plane;
@@ -434,15 +434,19 @@ uint32_t Engine::func_build_text_plane()
 
     func.lea(addr_(RAM_start), reg_A3);
     func.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
-    func.movel(addr_(reg_A4, Info::STRING_POSITIONS_OFFSET), reg_A5);
     func.moveq(0, reg_D0);
 
     // Double loop to write each letter of each line of text
     func.label("loop_write_string");
-    func.movew(addr_postinc_(reg_A5), reg_D3);
+    func.movew(addr_postinc_(reg_A1), reg_D3);
+    // If string position is 0xFFFF, it means we reached end of table
     func.cmpiw(0xFFFF, reg_D3);
     func.beq("complete");
     func.jsr(func_draw_string());
+    func.cmpib(0xFE, addr_(reg_A1));
+    func.bne("loop_write_string");
+    // If next byte is 0xFE, it's a padding byte we need to skip (because reading words on odd addresses is illegal)
+    func.addql(0x1, reg_A1);
     func.bra("loop_write_string");
 
     // Send our built plane map to VRAM
@@ -604,7 +608,7 @@ uint32_t Engine::func_boot_ui()
         func.jsr(_preinit_function_addr);
 
     func.jsr(func_init_ui());
-    func.jsr(func_build_text_plane());
+    func.jsr(func_build_initial_text_plane());
 
     // Init palette
     constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
