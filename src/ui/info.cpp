@@ -62,7 +62,6 @@ uint32_t Info::inject(md::ROM& rom)
     main_bytes_table.add_long(rom.inject_bytes(build_string_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_string_position_bytes()));
     main_bytes_table.add_long(rom.inject_bytes(build_selection_mapping_bytes()));
-    main_bytes_table.add_long(_preinit_function_addr);
 
     main_bytes_table.add_long(_on_up_pressed_addr);
     main_bytes_table.add_long(_on_down_pressed_addr);

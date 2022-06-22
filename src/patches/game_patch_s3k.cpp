@@ -100,13 +100,10 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
           "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY" },
     };
 
-    // Can store property values in $F664-$F67F
-     */
-    mdui::Engine ui_engine(rom);
+    uint32_t func_s3k_preinit = inject_func_preinit_s3k(rom);
+    mdui::Engine ui_engine(rom, func_s3k_preinit);
 
     mdui::VerticalMenu settings_ui(rom, ui_engine);
-    settings_ui.preinit_function_addr(inject_func_preinit_s3k(rom));
-
     settings_ui.add_option(1, 1,  "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", 0);
     settings_ui.add_option(1, 3,  "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 1);
     settings_ui.add_option(1, 5,  "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", 2);

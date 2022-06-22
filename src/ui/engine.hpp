@@ -8,6 +8,8 @@ class Engine {
 private:
     md::ROM& _rom;
 
+    uint32_t _preinit_function_addr = 0x0;
+
     uint32_t _ui_mode_ram_addr        = 0xFFFFFF80; ///< the RAM address where the "UI Mode" state is stored (byte)
     uint32_t _input_bits_ram_addr     = 0xFFFFFF81; ///< the RAM address where the currently pressed input bits are stored (byte)
     uint32_t _input_repeat_ram_addr   = 0xFFFFFF82; ///< the RAM address where the input repeat frame counter is located (byte)
@@ -30,8 +32,9 @@ private:
     uint32_t _func_boot_ui = 0x0;
 
 public:
-    Engine(md::ROM& rom) :
-        _rom                        (rom)
+    Engine(md::ROM& rom, uint32_t preinit_function_addr = 0x0) :
+        _rom                    (rom),
+        _preinit_function_addr  (preinit_function_addr)
     {
         rom.set_long(0x78, func_v_int());
     }

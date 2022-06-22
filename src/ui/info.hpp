@@ -22,8 +22,6 @@ private:
     std::pair<Color, Color> _text_color_palette_neutral = { {0x8,0x8,0x8}, {0xA,0xA,0xA} };
     std::pair<Color, Color> _text_color_palette_selected = { {0xF,0xA,0x0}, {0xF,0xC,0x4} };
 
-    uint32_t _preinit_function_addr = 0;
-
     uint32_t _on_down_pressed_addr = 0;
     uint32_t _on_up_pressed_addr = 0;
     uint32_t _on_left_pressed_addr = 0;
@@ -39,8 +37,7 @@ public:
     static constexpr uint32_t STRINGS_OFFSET = 0;
     static constexpr uint32_t STRING_POSITIONS_OFFSET = STRINGS_OFFSET + 0x4;
     static constexpr uint32_t SELECTION_MAPPINGS_OFFSET = STRING_POSITIONS_OFFSET + 0x4;
-    static constexpr uint32_t PREINIT_FUNC_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
-    static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = PREINIT_FUNC_OFFSET + 0x4;
+    static constexpr uint32_t CONTROLLER_EVENTS_OFFSET = SELECTION_MAPPINGS_OFFSET + 0x4;
     static constexpr uint32_t COLOR_PALETTES_OFFSET = CONTROLLER_EVENTS_OFFSET + (0x4 * 8);
     static constexpr uint8_t LAST_OPTION_ID_OFFSET = COLOR_PALETTES_OFFSET + (0x2 * 5);
     static constexpr uint32_t INFO_END_OFFSET = LAST_OPTION_ID_OFFSET + 1;
@@ -53,9 +50,6 @@ public:
     [[nodiscard]] const std::vector<SelectionMapping>& selection_mappings() const { return _selection_mappings; }
     void add_string(uint8_t x, uint8_t y, const std::string& str);
     void add_option(uint8_t x, uint8_t y, const std::string& str, uint8_t option_id);
-
-    [[nodiscard]] uint32_t preinit_function_addr() const { return _preinit_function_addr; }
-    void preinit_function_addr(uint32_t addr) { _preinit_function_addr = addr; }
 
     [[nodiscard]] uint32_t on_down_pressed() const { return _on_down_pressed_addr; }
     void on_down_pressed(uint32_t addr) { _on_down_pressed_addr = addr; }

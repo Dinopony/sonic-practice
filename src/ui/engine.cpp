@@ -600,12 +600,9 @@ uint32_t Engine::func_boot_ui()
     md::Code func;
 
     // Call the pre-init function if there is one
-    func.movel(addr_(reg_A4, Info::PREINIT_FUNC_OFFSET), reg_A1);
-    func.cmpa(lval_(0x0), reg_A1);
-    func.beq("after_preinit");
-    func.jsr(addr_(reg_A1));
+    if(_preinit_function_addr)
+        func.jsr(_preinit_function_addr);
 
-    func.label("after_preinit");
     func.jsr(func_init_ui());
     func.jsr(func_build_text_plane());
 
