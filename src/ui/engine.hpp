@@ -18,6 +18,9 @@ private:
 
     uint32_t _func_draw_option_value = 0x0;
     uint32_t _func_draw_all_option_values = 0x0;
+    uint32_t _func_get_option_value = 0x0;
+    uint32_t _func_set_option_value = 0x0;
+    uint32_t _func_get_option_maximum_value = 0x0;
     uint32_t _func_set_selected_option = 0x0;
     uint32_t _func_set_palette = 0x0;
     uint32_t _func_apply_selection_mapping = 0x0;
@@ -58,6 +61,9 @@ public:
 
     uint32_t func_draw_option_value();
     uint32_t func_draw_all_option_values();
+    uint32_t func_get_option_value();
+    uint32_t func_set_option_value();
+    uint32_t func_get_option_maximum_value();
     uint32_t func_set_selected_option();
     uint32_t func_set_palette();
     uint32_t func_apply_selection_mapping();

@@ -46,29 +46,60 @@ uint32_t VerticalMenu::inject_up_press_handler(md::ROM& rom, Engine& engine) con
     return rom.inject_code(func);
 }
 
-/*
 uint32_t VerticalMenu::inject_left_press_handler(md::ROM& rom, Engine& engine) const
 {
     md::Code func;
-    func.movem_to_stack({}, {});
+    func.movem_to_stack({ reg_D0, reg_D1, reg_D2 }, {});
 
-    // Read the currently selected option value and store it in D1
+    // Get the value for the currently selected option and store it in D1
     func.clrl(reg_D0);
     func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
-    func.lea(addrw_(engine.option_values_start_ram_addr()), reg_A0);
-    func.clrl(reg_D1);
-    func.moveb(addrw_(reg_A0, reg_D0), reg_D1);
+    func.jsr(engine.func_get_option_value()); // Current value --> D1
 
+    // Subtract the value by one
     func.subqb(1, reg_D1);
+
+    // In case of an underflow, loop back to last option
     func.bcc("no_underflow");
-    func.moveb(MAX_VALUE_FOR_OPTION(reg_D0), reg_D1); // In case of an underflow, loop back to last option
+    func.jsr(engine.func_get_option_maximum_value()); // Maximum value for option --> D2
+    func.moveb(reg_D2, reg_D1);
+
+    // Store this value as the new one for current option
     func.label("no_underflow");
     func.jsr(engine.func_set_option_value());
 
-    func.movem_from_stack({}, {});
+    func.movem_from_stack({ reg_D0, reg_D1, reg_D2 }, {});
     func.rts();
 
     return rom.inject_code(func);
-}*/
+}
+
+uint32_t VerticalMenu::inject_right_press_handler(md::ROM& rom, Engine& engine) const
+{
+    md::Code func;
+    func.movem_to_stack({ reg_D0, reg_D1, reg_D2 }, {});
+
+    // Get the value for the currently selected option and store it in D1
+    func.clrl(reg_D0);
+    func.moveb(addrw_(engine.current_option_ram_addr()), reg_D0);
+    func.jsr(engine.func_get_option_value());           // Current value --> D1
+    func.jsr(engine.func_get_option_maximum_value());   // Maximum value for option --> D2
+
+    // Add one to the value
+    func.addqb(1, reg_D1);
+    // In case of an overflow, loop back to first option
+    func.cmpb(reg_D2, reg_D1);
+    func.ble("no_overflow");
+    func.moveb(0, reg_D1);
+
+    // Store this value as the new one for current option
+    func.label("no_overflow");
+    func.jsr(engine.func_set_option_value());
+
+    func.movem_from_stack({ reg_D0, reg_D1, reg_D2 }, {});
+    func.rts();
+
+    return rom.inject_code(func);
+}
 
 } // namespace mdui

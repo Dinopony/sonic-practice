@@ -68,7 +68,7 @@ ByteArray Info::build_option_values_bytes(md::ROM& rom) const
         else
         {
             ByteArray value_list;
-            value_list.add_word(values_for_option.size());
+            value_list.add_word(values_for_option.size()-1);
             value_list.add_bytes(build_text_list_bytes(values_for_option));
             list_of_values_list_addrs.add_long(rom.inject_bytes(value_list));
         }

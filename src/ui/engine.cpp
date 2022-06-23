@@ -6,6 +6,8 @@
 
 namespace mdui {
 
+// TODO: erase previous option value before drawing a new one
+
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
 
@@ -107,6 +109,105 @@ uint32_t Engine::func_draw_all_option_values()
     // ------------------------------------------------------------------------------------------
     _func_draw_all_option_values = _rom.inject_code(func);
     return _func_draw_all_option_values;
+}
+
+/**
+ * Get the value for a given option
+ *
+ * Input:
+ *      - DO.b: the option ID
+ * Output:
+ *      - D1.b: the value for that option
+ */
+uint32_t Engine::func_get_option_value()
+{
+    if(_func_get_option_value)
+        return _func_get_option_value;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({}, { reg_A0 });
+
+    // Get the address where the current value for this option is stored, and put it in A0
+    func.lea(addrw_(_option_values_start_ram_addr), reg_A0);
+    func.adda(reg_D0, reg_A0);
+
+    // Fetch the current value ID for this option, and store it in D1
+    func.clrl(reg_D1);
+    func.moveb(addr_(reg_A0), reg_D1);
+
+    func.movem_from_stack({}, { reg_A0 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_get_option_value = _rom.inject_code(func);
+    return _func_get_option_value;
+}
+
+/**
+ * Set the value for a given option, updating all graphics accordingly
+ *
+ * Input:
+ *      - DO.b: the option ID
+ *      - D1.b: the new value for that option
+ */
+uint32_t Engine::func_set_option_value()
+{
+    if(_func_set_option_value)
+        return _func_set_option_value;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({}, {});
+
+    // Get the address where the current value for this option is stored, and put it in A0
+    func.lea(addrw_(_option_values_start_ram_addr), reg_A0);
+    func.adda(reg_D0, reg_A0);
+
+    // Put the new value inside the RAM, and draw it
+    func.moveb(reg_D1, addr_(reg_A0));
+    func.jsr(func_draw_option_value());
+
+    func.movem_from_stack({}, {});
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_set_option_value = _rom.inject_code(func);
+    return _func_set_option_value;
+}
+
+/**
+ * Read the maximum value for a given option.
+ *
+ * Input:
+ *      - DO.b: the option ID to get the maximum value for
+ *      - A4: pointer on the UI descriptor
+ * Output:
+ *      - D2.b: the maximum value for this option
+ */
+uint32_t Engine::func_get_option_maximum_value()
+{
+    if(_func_get_option_maximum_value)
+        return _func_get_option_maximum_value;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({}, { reg_A1 });
+
+    func.lea(addr_(reg_A4, Info::OPTION_VALUES_OFFSET), reg_A1);
+    func.clrl(reg_D2);
+    func.moveb(reg_D0, reg_D2);
+    func.lslw(2, reg_D2);
+    func.adda(reg_D2, reg_A1);
+    func.movel(addr_(reg_A1), reg_A1);
+    func.movew(addr_(reg_A1), reg_D2);
+
+    func.movem_from_stack({}, { reg_A1 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_get_option_maximum_value = _rom.inject_code(func);
+    return _func_get_option_maximum_value;
 }
 
 /**
@@ -501,8 +602,10 @@ uint32_t Engine::func_draw_text()
 
     // Iterate D2 times to write each letter tile of the string into the RAM
     func.label("loop_write_letter");
-    func.moveb(addr_postinc_(reg_A1), reg_D0);
-    func.movew(reg_D0, addr_postinc_(reg_A2));
+    func.movew(addr_(reg_A2), reg_D0);  // Fetch data already present in the plane map
+    func.andiw(0x6000, reg_D0);                 // Filter everything but the palette info (in order to keep palette)
+    func.orb(addr_postinc_(reg_A1), reg_D0);    // Set the new tile ID
+    func.movew(reg_D0, addr_postinc_(reg_A2));  // Send the new data back inside the plane map
     func.dbra(reg_D2, "loop_write_letter");
 
     func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });

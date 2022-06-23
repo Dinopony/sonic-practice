@@ -292,8 +292,12 @@ Code& Code::movem_to_stack(const std::vector<DataRegister>& data_regs, const std
     for (const AddressRegister& r : addr_regs)
         registersToStore |= (0x0080 >> r.getXn());
 
-    this->add_opcode(0x48E7);
-    this->add_word(registersToStore); // 0xFFFE = D0-D7 and A0-A6
+    if(registersToStore > 0x0000)
+    {
+        this->add_opcode(0x48E7);
+        this->add_word(registersToStore); // 0xFFFE = D0-D7 and A0-A6
+    }
+
     return *this;
 }
 
@@ -305,8 +309,12 @@ Code& Code::movem_from_stack(const std::vector<DataRegister>& data_regs, const s
     for (const AddressRegister& r : addr_regs)
         registersToStore |= (0x0100 << r.getXn());
 
-    this->add_opcode(0x4CDF);
-    this->add_word(registersToStore); // 0x7FFF = A6-A0 and D7-D0
+    if(registersToStore > 0x0000)
+    {
+        this->add_opcode(0x4CDF);
+        this->add_word(registersToStore); // 0x7FFF = A6-A0 and D7-D0
+    }
+
     return *this;
 }
 

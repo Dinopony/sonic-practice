@@ -7,6 +7,7 @@ void GamePatchS3K::mark_empty_chunks(md::ROM& rom)
 {
     // rom.mark_empty_chunk(0x95590, 0x96000);
     // rom.mark_empty_chunk(0xDE690, 0xDEA00);
+    rom.mark_empty_chunk(0x7A74, 0x81AF); // Old level select code & assets
     rom.mark_empty_chunk(0x1FF420, 0x200000);
     // rom.mark_empty_chunk(0x25CFF0, 0x25E000);
     rom.mark_empty_chunk(0x3FFF20, 0x400000);
