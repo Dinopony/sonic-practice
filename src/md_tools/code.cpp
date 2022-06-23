@@ -449,6 +449,14 @@ Code& Code::adda(const Param& value, const AddressRegister& ax)
     return *this;
 }
 
+Code& Code::suba(const Param& value, const AddressRegister& ax)
+{
+    uint16_t opcode = 0x91C0 + (ax.getXn() << 9) + value.getMXn();
+    this->add_opcode(opcode);
+    this->add_bytes(value.getAdditionnalData());
+    return *this;
+}
+
 Code& Code::lea(const Param& value, const AddressRegister& to)
 {
     uint16_t opcode = 0x41C0 + (to.getXn() << 9) + (value.getMXn());

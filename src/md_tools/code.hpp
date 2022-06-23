@@ -121,6 +121,9 @@ namespace md
         Code& adda(const Param& value, const AddressRegister& ax);
         Code& adda(uint32_t value, const AddressRegister& ax) { return this->adda(ImmediateValue(value), ax); }
 
+        Code& suba(const Param& value, const AddressRegister& ax);
+        Code& suba(uint32_t value, const AddressRegister& ax) { return this->suba(ImmediateValue(value), ax); }
+
         Code& lea(const Param& value, const AddressRegister& to);
 
         Code& and_to_dx(const Param& from, const DataRegister& to, Size size);

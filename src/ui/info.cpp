@@ -110,13 +110,13 @@ void Info::add_string(uint8_t x, uint8_t y, const std::string& str)
 
 void Info::add_selectable_option(uint8_t x, uint8_t y, const std::string& str, const std::vector<std::string>& value_strings)
 {
-    this->add_string(x, y, str);
+    this->add_string(x, y, str + " ");
 
     uint8_t option_id = 0;
     if(!_selection_mappings.empty())
         option_id = last_option_id() + 1;
 
-    SelectionMapping mapping(option_id , x, y, static_cast<uint8_t>(str.size()));
+    SelectionMapping mapping(option_id , x, y, 36);
     _selection_mappings.emplace_back(mapping);
 
     std::vector<Text> option_values;

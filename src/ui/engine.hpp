@@ -9,6 +9,7 @@ private:
     md::ROM& _rom;
 
     uint32_t _preinit_function_addr = 0x0;
+    uint8_t _alignment_helper_character = 0x3A; ///< Character used to align option labels and their values (defaults to '%')
 
     uint32_t _ui_mode_ram_addr        = 0xFFFFFF80; ///< the RAM address where the "UI Mode" state is stored (byte)
     uint32_t _input_bits_ram_addr     = 0xFFFFFF81; ///< the RAM address where the currently pressed input bits are stored (byte)
@@ -28,6 +29,7 @@ private:
     uint32_t _func_wait_vsync = 0x0;
     uint32_t _func_copy_plane_map_to_vram = 0x0;
     uint32_t _func_erase_text = 0x0;
+    uint32_t _func_draw_alignment_helper_line = 0x0;
     uint32_t _func_draw_text = 0x0;
     uint32_t _func_poll_controller = 0x0;
     uint32_t _func_v_int = 0x0;
@@ -44,6 +46,9 @@ public:
     {
         rom.set_long(0x78, func_v_int());
     }
+
+    [[nodiscard]] uint8_t alignment_helper_character() const { return _alignment_helper_character; }
+    void alignment_helper_character(uint8_t character) { _alignment_helper_character = character; }
 
     [[nodiscard]] uint32_t ui_mode_ram_addr() const { return _ui_mode_ram_addr; }
     void ui_mode_ram_addr(uint32_t addr) { _ui_mode_ram_addr = addr; }
@@ -74,6 +79,7 @@ public:
     uint32_t func_wait_vsync();
     uint32_t func_copy_plane_map_to_vram();
     uint32_t func_erase_text();
+    uint32_t func_draw_alignment_helper_line();
     uint32_t func_draw_text();
     uint32_t func_poll_controller();
     uint32_t func_v_int();

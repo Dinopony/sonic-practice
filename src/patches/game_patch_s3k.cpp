@@ -111,14 +111,14 @@ void GamePatchS3K::add_settings_menu(md::ROM& rom)
     settings_ui.add_string(1, 1, "       * SONIC 3 AND KNUCKLES *       ");
     settings_ui.add_string(1, 3, "             PRACTICE ROM             ");
     settings_ui.add_string(1, 4, "______________________________________");
-    settings_ui.add_selectable_option(1, 6,  "CHARACTER %%%%%%%%%%%%%%%%%%%%%%%%%%%%", CHARACTERS_LIST);
-    settings_ui.add_selectable_option(1, 8,  "EMERALDS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%", EMERALDS_LIST);
-    settings_ui.add_selectable_option(1, 10, "SHIELD %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", SHIELDS_LIST);
-    settings_ui.add_selectable_option(1, 12, "MUSIC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", { "ON", "OFF" });
-    settings_ui.add_selectable_option(1, 14, "LOWER BOSS HITCOUNT %%%%%%%%%%%%%%%%%%", { "NO", "YES" });
-    settings_ui.add_selectable_option(1, 16, "TIMER DURING PAUSE %%%%%%%%%%%%%%%%%%%", { "OFF", "ON" });
-    settings_ui.add_selectable_option(1, 20, "ZONE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", ZONES_LIST);
-    settings_ui.add_selectable_option(1, 22, "SPAWN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", { "ACT 1", "ACT 2"});
+    settings_ui.add_selectable_option(1, 6,  "CHARACTER", CHARACTERS_LIST);
+    settings_ui.add_selectable_option(1, 8,  "EMERALDS", EMERALDS_LIST);
+    settings_ui.add_selectable_option(1, 10, "SHIELD", SHIELDS_LIST);
+    settings_ui.add_selectable_option(1, 12, "MUSIC", { "ON", "OFF" });
+    settings_ui.add_selectable_option(1, 14, "LOWER BOSS HITCOUNT", { "NO", "YES" });
+    settings_ui.add_selectable_option(1, 16, "TIMER DURING PAUSE", { "OFF", "ON" });
+    settings_ui.add_selectable_option(1, 20, "ZONE", ZONES_LIST);
+    settings_ui.add_selectable_option(1, 22, "SPAWN", { "ACT 1", "ACT 2"});
     settings_ui.add_string(1, 25, "______________________________________");
     settings_ui.add_string(22, 26, "a PLAY    b BACK");
 

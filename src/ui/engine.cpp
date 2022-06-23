@@ -5,15 +5,6 @@
 
 namespace mdui {
 
-// TODO: add automatic filling with % to lighten the initial strings
-//       - add a `_alignment_helper_character` that defaults to '%' in UI::Engine
-//       - use that character in `func_erase_text`
-//       - use that character after drawing strings? (only for options though > how to know?)
-//          - a solution could be, on init, to do the following:
-//              1) on each line where options must be drawn, fill those with this character on X values [1;N-1]
-//              2) draw the option after drawing this line
-//              3) draw static strings
-
 // TODO: handle the no-value case for options
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
@@ -110,6 +101,7 @@ uint32_t Engine::func_draw_all_option_values()
     func.moveb(addr_postinc_(reg_A2), reg_D1);
     // Draw the text for value D1 of option D0
     func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.jsr(func_draw_alignment_helper_line());
     func.jsr(func_draw_text());
     // Go to next option
     func.addqb(1, reg_D0);
@@ -597,10 +589,10 @@ uint32_t Engine::func_erase_text()
 
     // Iterate D2 times to put a placeholder character in place of the option text into the RAM
     func.label("loop_erase_letter");
-    func.movew(addr_(reg_A2), reg_D0);          // Fetch data already present in the plane map
-    func.andiw(0x6000, reg_D0);                 // Filter everything but the palette info (in order to keep palette)
-    func.orib(0x3A, reg_D0);                    // Set the new tile ID ('%' character)
-    func.movew(reg_D0, addr_postinc_(reg_A2));  // Send the new data back inside the plane map
+    func.movew(addr_(reg_A2), reg_D0);              // Fetch data already present in the plane map
+    func.andiw(0x6000, reg_D0);                     // Filter everything but the palette info (in order to keep palette)
+    func.orib(_alignment_helper_character, reg_D0); // Set the new tile ID to the alignement helper character
+    func.movew(reg_D0, addr_postinc_(reg_A2));      // Send the new data back inside the plane map
     func.dbra(reg_D2, "loop_erase_letter");
 
     func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
@@ -609,6 +601,50 @@ uint32_t Engine::func_erase_text()
     // ------------------------------------------------------------------------------------------
     _func_erase_text = _rom.inject_code(func);
     return _func_erase_text;
+}
+
+/**
+ * Draw an "alignment helper line", consisting of a small character helping the user to see the alignment between
+ * options labels and values.
+ *
+ * Input:
+ *      - A1: pointer on the option value Text structure, used to get the position where to draw the line
+ */
+uint32_t Engine::func_draw_alignment_helper_line()
+{
+    if(_func_draw_alignment_helper_line)
+        return _func_draw_alignment_helper_line;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2 });
+
+    // Read the string position (D3), then use it to deduce plane map address where we should draw the option string (A2)
+    func.lea(addr_(RAM_start), reg_A2);
+    func.movew(addr_(reg_A1), reg_D3);
+    func.lea(addrw_(reg_A2, reg_D3), reg_A2);
+
+    // Read the string size (D3), then subtract it from the line size to know how much characters we need to draw
+    func.moveb(addr_(reg_A1, 0x2), reg_D3);
+    func.moveb(37, reg_D2);
+    func.subb(reg_D3, reg_D2);
+    func.suba(reg_D2, reg_A2);
+    func.suba(reg_D2, reg_A2);
+
+    // Now, loop as much as we have moved back to fill the line with alignment helper tiles
+    func.label("loop_write_letter");
+    func.movew(addr_(reg_A2), reg_D0);              // Fetch data already present in the plane map
+    func.andiw(0x6000, reg_D0);                     // Filter everything but the palette info (in order to keep palette)
+    func.orib(_alignment_helper_character, reg_D0); // Set the new tile ID
+    func.movew(reg_D0, addr_postinc_(reg_A2));      // Send the new data back inside the plane map
+    func.dbra(reg_D2, "loop_write_letter");
+
+    func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_draw_alignment_helper_line = _rom.inject_code(func);
+    return _func_draw_alignment_helper_line;
 }
 
 /**
@@ -664,6 +700,7 @@ uint32_t Engine::func_build_initial_plane_map()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
+    func.jsr(func_draw_all_option_values());
 
     func.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
     func.moveq(0, reg_D0);
@@ -682,7 +719,6 @@ uint32_t Engine::func_build_initial_plane_map()
 
     // Send our built plane map to VRAM
     func.label("complete");
-    func.jsr(func_draw_all_option_values());
     func.rts();
 
     // ------------------------------------------------------------------------------------------
