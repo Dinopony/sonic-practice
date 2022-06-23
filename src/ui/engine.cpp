@@ -2,12 +2,19 @@
 #include "info.hpp"
 #include "vertical_menu.hpp"
 #include "../../assets/nem_decomp.bin.hxx"
-#include <iostream>
 
 namespace mdui {
 
-// TODO: erase previous option value before drawing a new one
+// TODO: add automatic filling with % to lighten the initial strings
+//       - add a `_alignment_helper_character` that defaults to '%' in UI::Engine
+//       - use that character in `func_erase_text`
+//       - use that character after drawing strings? (only for options though > how to know?)
+//          - a solution could be, on init, to do the following:
+//              1) on each line where options must be drawn, fill those with this character on X values [1;N-1]
+//              2) draw the option after drawing this line
+//              3) draw static strings
 
+// TODO: handle the no-value case for options
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
 
@@ -24,22 +31,29 @@ constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+///        OPTIONS HANDLING
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /**
- * Draw the text of a given value for the given option.
+ * Find the address of the given value text for the given option.
  *
  * Input:
- *      - D0.b: option to draw the value for
- *      - D1.b: option value to draw
+ *      - D0.b: option ID
+ *      - D1.b: value ID for option
+ * Output:
+ *      - A1: address pointing on the text
  */
-uint32_t Engine::func_draw_option_value()
+uint32_t Engine::func_get_option_value_text_addr()
 {
-    if(_func_draw_option_value)
-        return _func_draw_option_value;
+    if(_func_get_option_value_text_addr)
+        return _func_get_option_value_text_addr;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({ reg_D0,reg_D1 }, { reg_A1 });
+    func.movem_to_stack({ reg_D0,reg_D1 }, {});
 
+    // Find the address of the first value text for option D0, and store it in A1
     func.lea(addr_(reg_A4, Info::OPTION_VALUES_OFFSET), reg_A1);
     func.andil(0x000000FF, reg_D0);
     func.lslw(2, reg_D0);
@@ -47,9 +61,10 @@ uint32_t Engine::func_draw_option_value()
     func.movel(addr_(reg_A1), reg_A1);
     func.addql(0x2, reg_A1);
 
+    // Skip D1 texts to reach the one we want to draw
     func.label("loop_skip_texts");
     func.tstb(reg_D1);
-    func.beq("draw_text");
+    func.beq("return");
     func.addql(0x2, reg_A1);
     func.moveb(addr_postinc_(reg_A1), reg_D0);
     func.addqb(0x1, reg_D0);
@@ -62,19 +77,17 @@ uint32_t Engine::func_draw_option_value()
     func.subqb(0x1, reg_D1);
     func.bra("loop_skip_texts");
 
-    func.label("draw_text");
-    func.jsr(func_draw_text());
-
-    func.movem_from_stack({ reg_D0,reg_D1 }, { reg_A1 });
+    func.label("return");
+    func.movem_from_stack({ reg_D0,reg_D1 }, {});
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_draw_option_value = _rom.inject_code(func);
-    return _func_draw_option_value;
+    _func_get_option_value_text_addr = _rom.inject_code(func);
+    return _func_get_option_value_text_addr;
 }
 
 /**
- * TODO doc
+ * Draw the current value text for all options (typically used on UI boot)
  */
 uint32_t Engine::func_draw_all_option_values()
 {
@@ -83,19 +96,22 @@ uint32_t Engine::func_draw_all_option_values()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({ reg_D0, reg_D1 }, { reg_A1 });
+    func.movem_to_stack({ reg_D0, reg_D1 }, { reg_A1, reg_A2 });
 
     func.clrl(reg_D2);
     func.movew(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D2);
 
-    func.lea(addr_(_option_values_start_ram_addr), reg_A1);
+    func.lea(addr_(_option_values_start_ram_addr), reg_A2);
     func.clrl(reg_D0);
 
     func.label("loop");
     // D0 contains the currently processed option
     // Store the option value ID in D1
-    func.moveb(addr_postinc_(reg_A1), reg_D1);
-    func.jsr(func_draw_option_value());
+    func.moveb(addr_postinc_(reg_A2), reg_D1);
+    // Draw the text for value D1 of option D0
+    func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.jsr(func_draw_text());
+    // Go to next option
     func.addqb(1, reg_D0);
     func.cmpb(reg_D2, reg_D0);
     func.bgt("return");
@@ -103,7 +119,7 @@ uint32_t Engine::func_draw_all_option_values()
 
     func.label("return");
     func.movew(0xFFFF, addr_postinc_(reg_A6));
-    func.movem_from_stack({ reg_D0, reg_D1 }, {  reg_A1 });
+    func.movem_from_stack({ reg_D0, reg_D1 }, { reg_A1,reg_A2 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -112,12 +128,12 @@ uint32_t Engine::func_draw_all_option_values()
 }
 
 /**
- * Get the value for a given option
+ * Get the current value for a given option
  *
  * Input:
  *      - DO.b: the option ID
  * Output:
- *      - D1.b: the value for that option
+ *      - D1.b: the currently selected value for that option
  */
 uint32_t Engine::func_get_option_value()
 {
@@ -158,17 +174,25 @@ uint32_t Engine::func_set_option_value()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({}, {});
+    func.movem_to_stack({}, { reg_A1 });
 
     // Get the address where the current value for this option is stored, and put it in A0
     func.lea(addrw_(_option_values_start_ram_addr), reg_A0);
     func.adda(reg_D0, reg_A0);
 
-    // Put the new value inside the RAM, and draw it
-    func.moveb(reg_D1, addr_(reg_A0));
-    func.jsr(func_draw_option_value());
+    // Erase the old value text
+    func.moveb(reg_D1, reg_D2);
+    func.moveb(addr_(reg_A0), reg_D1);
+    func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.jsr(func_erase_text());
 
-    func.movem_from_stack({}, {});
+    // Set the new value, and draw its text
+    func.moveb(reg_D2, reg_D1);
+    func.moveb(reg_D1, addr_(reg_A0));
+    func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.jsr(func_draw_text());
+
+    func.movem_from_stack({}, { reg_A1 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -245,40 +269,6 @@ uint32_t Engine::func_set_selected_option()
 }
 
 /**
- * Converts 2D coordinates into a plane map address, which then can be used to edit tile/palette at those coordinates
- *
- *  Input:
- *      - D1: X start position
- *      - D2: Y start position
- *      - A2: Plane map starting address
- *  Output:
- *      - A1: Target address
- *      - Input
- */
- /*
-uint32_t Engine::func_coords_to_plane_map_address()
-{
-    if(_func_coords_to_plane_map_address)
-        return _func_coords_to_plane_map_address;
-    // ------------------------------------------------------------------------------------------
-
-    md::Code func;
-    func.movem_to_stack({ reg_D2 }, {});
-
-    func.mulu(0x50, reg_D2);                    // Multiply Y by 0x50
-    func.lslw(1, reg_D1);                       // Multiply X by 2
-    func.addw(reg_D1, reg_D2);                  // Add those two to have the offset
-    func.lea(addrw_(reg_A2, reg_D2), reg_A1);   // Apply this offset to plane map starting address to get the effective address
-
-    func.movem_from_stack({ reg_D2 }, {});
-    func.rts();
-
-    // ------------------------------------------------------------------------------------------
-    _func_coords_to_plane_map_address = _rom.inject_code(func);
-    return _func_coords_to_plane_map_address;
-}*/
-
-/**
  * Change the palette of N consecutive tiles, starting at the given address.
  *
  * Input:
@@ -323,7 +313,6 @@ uint32_t Engine::func_set_palette()
  *
  * Input:
  *      - D3.w: Palette mask to apply (0x0000, 0x2000, 0x4000, 0x6000 for palettes 0, 1, 2, 3 respectively)
- *
  *      - A4: Layout descriptor addr (must be at least a VerticalMenu to have selection mappings)
  */
 uint32_t Engine::func_apply_selection_mapping()
@@ -381,7 +370,10 @@ uint32_t Engine::func_apply_selection_mapping()
 }
 
 /**
- * TODO doc
+ * Decompiles data which was compressed using the Nemesis algorithm.
+ *
+ * Input:
+ *      - A0: points on the data to decompress
  */
 uint32_t Engine::func_nemesis_decomp()
 {
@@ -394,7 +386,7 @@ uint32_t Engine::func_nemesis_decomp()
 }
 
 /**
- * TODO doc
+ * Poll the controller status and update the appropriate RAM slot with bits related to the currently pressed buttons.
  */
 uint32_t Engine::func_poll_controller()
 {
@@ -434,7 +426,9 @@ uint32_t Engine::func_poll_controller()
 }
 
 /**
- * TODO doc
+ * Vertical interruption working as a wrapper for the original VInt inside the ROM the UI lib is injected in.
+ * It overrides initial behavior by custom behavior to make the UI game-independent and self-sufficient, regardless
+ * of the game it is injected in.
  */
 uint32_t Engine::func_v_int()
 {
@@ -508,7 +502,9 @@ uint32_t Engine::func_v_int()
 }
 
 /**
- * TODO doc
+ * Closed loop waiting for our custom vertical interruption to kick in (see func_v_int) in order to leave the function.
+ * This ensures vertical blank occurred and the frame was drawn by the VDP, effectively ensuring the code alongside
+ * its call is run exactly once per frame.
  */
 uint32_t Engine::func_wait_vsync()
 {
@@ -517,7 +513,6 @@ uint32_t Engine::func_wait_vsync()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-
     func.move_to_sr(0x2300); // Enable VInts
 
     func.label("wait_for_v_int");
@@ -535,7 +530,7 @@ uint32_t Engine::func_wait_vsync()
 }
 
 /**
- * TODO doc
+ * Send the full plane map to VRAM, updating the tiles displayed on screen.
  *
  * Input:
  *      - D0.w: VDP control word
@@ -575,7 +570,49 @@ uint32_t Engine::func_copy_plane_map_to_vram()
 }
 
 /**
- * TODO doc
+ * Erase text pointed by A1, replacing it with placeholder / empty character.
+ *
+ * Input:
+ *      - A1: pointer on the text structure
+ */
+uint32_t Engine::func_erase_text()
+{
+    if(_func_erase_text)
+        return _func_erase_text;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
+
+    // Put the plane map starting address in A3
+    func.lea(addr_(RAM_start), reg_A3);
+
+    // Read the string position (D3), then use it to deduce plane map address where to draw the string (A2)
+    func.movew(addr_postinc_(reg_A1), reg_D3);
+    func.lea(addrw_(reg_A3, reg_D3), reg_A2);
+
+    // Store the string size (first byte of the string) in D2
+    func.moveq(0, reg_D2);
+    func.moveb(addr_postinc_(reg_A1), reg_D2);
+
+    // Iterate D2 times to put a placeholder character in place of the option text into the RAM
+    func.label("loop_erase_letter");
+    func.movew(addr_(reg_A2), reg_D0);          // Fetch data already present in the plane map
+    func.andiw(0x6000, reg_D0);                 // Filter everything but the palette info (in order to keep palette)
+    func.orib(0x3A, reg_D0);                    // Set the new tile ID ('%' character)
+    func.movew(reg_D0, addr_postinc_(reg_A2));  // Send the new data back inside the plane map
+    func.dbra(reg_D2, "loop_erase_letter");
+
+    func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_erase_text = _rom.inject_code(func);
+    return _func_erase_text;
+}
+
+/**
+ * Draw the text structure pointed by A1 on screen, respecting its position and its contents.
  *
  * Input:
  *      - A1: pointer on the text structure
@@ -617,12 +654,13 @@ uint32_t Engine::func_draw_text()
 }
 
 /**
- * TODO doc
+ * Builds the initial plane map containing the tiles to be drawn on screen on each frame.
+ * It is built using the static strings and the dynamic option values.
  */
-uint32_t Engine::func_build_initial_text_plane()
+uint32_t Engine::func_build_initial_plane_map()
 {
-    if(_func_build_text_plane)
-        return _func_build_text_plane;
+    if(_func_build_initial_plane_map)
+        return _func_build_initial_plane_map;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
@@ -644,15 +682,16 @@ uint32_t Engine::func_build_initial_text_plane()
 
     // Send our built plane map to VRAM
     func.label("complete");
+    func.jsr(func_draw_all_option_values());
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_build_text_plane = _rom.inject_code(func);
-    return _func_build_text_plane;
+    _func_build_initial_plane_map = _rom.inject_code(func);
+    return _func_build_initial_plane_map;
 }
 
 /**
- * TODO doc
+ * Check the currently pressed buttons, and call the appropriate event handlers accordingly
  */
 uint32_t Engine::func_handle_ui_controls()
 {
@@ -714,7 +753,7 @@ uint32_t Engine::func_handle_ui_controls()
 }
 
 /**
- * TODO doc
+ * Main loop refreshing the UI display and looking for user input
  */
 uint32_t Engine::func_ui_main_loop()
 {
@@ -725,14 +764,14 @@ uint32_t Engine::func_ui_main_loop()
     md::Code func;
     func.label("begin"); // routine running during level select
 
-    // Wait for the frame to be drawn by the VDP before processing another one
-    func.jsr(func_wait_vsync());
-
     // Handle controls, calling callback functions that have been associated to the layout if matching buttons are pressed
     func.jsr(func_handle_ui_controls());
 
     // Copy the plane map to VRAM
     func.jsr(func_copy_plane_map_to_vram());
+
+    // Wait for the frame to be drawn by the VDP before processing another one
+    func.jsr(func_wait_vsync());
 
     func.bra("begin");
 
@@ -741,8 +780,12 @@ uint32_t Engine::func_ui_main_loop()
     return _func_ui_main_loop;
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+///        INITIAL BOOTUP HANDLING
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /**
- * TODO doc
+ * Initialize all the required things for the UI to work properly
  */
 uint32_t Engine::func_init_ui()
 {
@@ -754,10 +797,16 @@ uint32_t Engine::func_init_ui()
 
     md::Code func;
     func.move_to_sr(0x2700); // Disable VInts
+
+    // Call the pre-init function if there is one
+    if(_preinit_function_addr)
+        func.jsr(_preinit_function_addr);
+
 //    func_init_gui.movew(addrw_(VDP_reg_1_command), reg_D0);  // 0xFFFFF60E
 //    func_init_gui.andib(0xBF, reg_D0);
 //    func_init_gui.movew(reg_D0, addr_(VDP_control_port));
 //    func_init_gui.jsr(Clear_DisplayData);     // 0x11CA
+
     func.lea(addr_(VDP_control_port), reg_A6);
     func.movew(0x8004, addr_(reg_A6));
     func.movew(0x8230, addr_(reg_A6));
@@ -776,34 +825,7 @@ uint32_t Engine::func_init_ui()
     func.lea(addr_(gui_tileset_addr), reg_A0);
     func.jsr(func_nemesis_decomp());
 
-    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
-
-    func.rts();
-
-    // ------------------------------------------------------------------------------------------
-    _func_init_ui = _rom.inject_code(func);
-    return _func_init_ui;
-}
-
-/**
- * TODO doc
- */
-uint32_t Engine::func_boot_ui()
-{
-    if(_func_boot_ui)
-        return _func_boot_ui;
-    // ------------------------------------------------------------------------------------------
-
-    md::Code func;
-
-    // Call the pre-init function if there is one
-    if(_preinit_function_addr)
-        func.jsr(_preinit_function_addr);
-
-    func.jsr(func_init_ui());
-    func.jsr(func_build_initial_text_plane());
-
-    // Init palette
+    // Init palettes
     constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
     func.lea(addr_(reg_A4, Info::COLOR_PALETTES_OFFSET), reg_A1);
     func.movew(addr_postinc_(reg_A1), addrw_(PALETTE_0_ADDR));
@@ -818,10 +840,34 @@ uint32_t Engine::func_boot_ui()
     func.orib(0x40, reg_D0);
     func.movew(reg_D0, addr_(VDP_control_port));
 
+    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
+
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_init_ui = _rom.inject_code(func);
+    return _func_init_ui;
+}
+
+/**
+ * Entry point for the UI engine, call this function to start displaying a given UI.
+ *
+ * Input:
+ *      - A4: pointer on the UI descriptor structure
+ */
+uint32_t Engine::func_boot_ui()
+{
+    if(_func_boot_ui)
+        return _func_boot_ui;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+
+    func.jsr(func_init_ui());
+
+    func.jsr(func_build_initial_plane_map());
     func.movew(0x2000, reg_D3);
     func.jsr(func_apply_selection_mapping());
-
-    func.jsr(func_draw_all_option_values());
 
     func.jsr(func_ui_main_loop());
     func.rts();

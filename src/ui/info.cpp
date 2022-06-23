@@ -120,8 +120,9 @@ void Info::add_selectable_option(uint8_t x, uint8_t y, const std::string& str, c
     _selection_mappings.emplace_back(mapping);
 
     std::vector<Text> option_values;
-    for(const std::string& value_string : value_strings)
+    for(std::string value_string : value_strings)
     {
+        value_string = " " + value_string;
         uint8_t value_x = 39 - value_string.size();
         option_values.emplace_back(Text(value_string, value_x, y));
     }
