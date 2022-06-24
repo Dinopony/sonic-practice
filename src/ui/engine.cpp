@@ -7,7 +7,6 @@ namespace mdui {
 
 // TODO: cable option values to real gameplay values
 // TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
-// TODO: handle the no-value case for options
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
 
@@ -31,7 +30,7 @@ constexpr uint32_t Z80_bus_request = 0xA11100;
  *      - D0.b: option ID
  *      - D1.b: value ID for option
  * Output:
- *      - A1: address pointing on the text
+ *      - A1: address pointing on the text (or 0x0 if text does not exist)
  */
 uint32_t Engine::func_get_option_value_text_addr()
 {
@@ -48,6 +47,8 @@ uint32_t Engine::func_get_option_value_text_addr()
     func.lslw(2, reg_D0);
     func.adda(reg_D0, reg_A1);
     func.movel(addr_(reg_A1), reg_A1);
+    func.cmpa(addr_(0x0), reg_A1);
+    func.beq("return");
     func.addql(0x2, reg_A1);
 
     // Skip D1 texts to reach the one we want to draw
@@ -99,9 +100,12 @@ uint32_t Engine::func_draw_all_option_values()
     func.moveb(addr_postinc_(reg_A2), reg_D1);
     // Draw the text for value D1 of option D0
     func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.cmpa(addr_(0x0), reg_A1);
+    func.beq("next_option");
     func.jsr(func_draw_alignment_helper_line());
     func.jsr(func_draw_text());
     // Go to next option
+    func.label("next_option");
     func.addqb(1, reg_D0);
     func.cmpb(reg_D2, reg_D0);
     func.bgt("return");
@@ -174,6 +178,8 @@ uint32_t Engine::func_set_option_value()
     func.moveb(reg_D1, reg_D2);
     func.moveb(addr_(reg_A0), reg_D1);
     func.jsr(func_get_option_value_text_addr()); // --> A1
+    func.cmpa(addr_(0x0), reg_A1);
+    func.beq("return");
     func.jsr(func_erase_text());
 
     // Set the new value, and draw its text
@@ -183,6 +189,7 @@ uint32_t Engine::func_set_option_value()
     func.jsr(func_draw_text());
 
     func.movem_from_stack({}, { reg_A1 });
+    func.label("return");
     func.rts();
 
     // ------------------------------------------------------------------------------------------
