@@ -1,7 +1,5 @@
 #include "game_patch_s3k.hpp"
-#include "../ui/engine.hpp"
-#include "../ui/vertical_menu.hpp"
-#include "../ui/text.hpp"
+
 
 void GamePatchS3K::mark_empty_chunks(md::ROM& rom)
 {
@@ -15,8 +13,16 @@ void GamePatchS3K::mark_empty_chunks(md::ROM& rom)
 
 void GamePatchS3K::skip_title_screen_to_level_select(md::ROM& rom)
 {
-    // Make "Sega Screen" gamemode point to the address of level select function
-    rom.set_long(0x4C6, 0x00007A74);
+    uint32_t main_menu_addr = inject_main_menu(rom);
+    std::cout << "Main Menu is at " << std::hex << main_menu_addr << std::dec << std::endl;
+
+    md::Code proc_boot_ui;
+    proc_boot_ui.lea(addr_(main_menu_addr), reg_A4);
+    proc_boot_ui.jmp(_engine->func_boot_ui());
+    uint32_t boot_ui_addr = rom.inject_code(proc_boot_ui);
+
+    // Make "Sega Screen" gamemode point to the practice mod UI bootup procedure
+    rom.set_long(0x4C6, boot_ui_addr);
 }
 
 void GamePatchS3K::give_infinite_lives(md::ROM& rom)
@@ -36,7 +42,11 @@ void GamePatchS3K::display_additionnal_hud_on_pause(md::ROM& rom)
     // TODO: Display last spindash speed
 }
 
-static uint32_t inject_func_preinit_s3k(md::ROM& rom)
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///     UI STUFF
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+uint32_t GamePatchS3K::inject_func_preinit_s3k(md::ROM& rom)
 {
     // constexpr uint32_t Pal_FadeToBlack = 0x3BE4;
     // constexpr uint32_t Pal_FadeFromBlack = 0x3AF0;
@@ -67,7 +77,7 @@ static uint32_t inject_func_preinit_s3k(md::ROM& rom)
     func_s3k_preinit.clrb(addr_(0xF711)); // Level Started Flag
     func_s3k_preinit.clrw(addr_(0xF7F0)); // Anim Counters
     func_s3k_preinit.movew(0x707, addr_(0xF614)); // Demo timer
-    func_s3k_preinit.clrw(addr_(0xFFE8)); // Competition mode
+    func_s3k_preinit.clrw(addr_(COMPETITION_MODE));
     func_s3k_preinit.clrl(addr_(0xEE78)); // Camera X pos
     func_s3k_preinit.clrl(addr_(0xEE7C)); // Camera Y pos
     func_s3k_preinit.clrl(addr_(0xE660)); // Save pointer
@@ -85,48 +95,4 @@ static uint32_t inject_func_preinit_s3k(md::ROM& rom)
     func_s3k_preinit.rts();
 
     return rom.inject_code(func_s3k_preinit);
-}
-
-void GamePatchS3K::add_settings_menu(md::ROM& rom)
-{
-    // Can store property values in $F664-$F67F
-    const std::vector<std::string> CHARACTERS_LIST = {
-            "SONIC + TAILS", "SONIC", "TAILS", "KNUCKLES"
-    };
-    const std::vector<std::string> SHIELDS_LIST = {
-            "NONE", "LIGHTNING", "FIRE", "WATER"
-    };
-    const std::vector<std::string> EMERALDS_LIST = {
-            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"
-    };
-    const std::vector<std::string> ZONES_LIST = {
-        "ANGEL ISLAND", "HYDROCITY", "MARBLE GARDEN", "CARNIVAL NIGHT", "ICECAP", "LAUNCH BASE", "MUSHROOM HILL",
-        "FLYING BATTERY", "SANDOPOLIS", "LAVA REEF", "HIDDEN PALACE", "SKY SANCTUARY", "DEATH EGG", "THE DOOMSDAY"
-    };
-
-    uint32_t func_s3k_preinit = inject_func_preinit_s3k(rom);
-    mdui::Engine ui_engine(rom, func_s3k_preinit);
-
-    mdui::VerticalMenu settings_ui(rom, ui_engine);
-    settings_ui.add_string(1, 1, "       * SONIC 3 AND KNUCKLES *       ");
-    settings_ui.add_string(1, 3, "             PRACTICE ROM             ");
-    settings_ui.add_string(1, 4, "______________________________________");
-    settings_ui.add_selectable_option(1, 6,  "CHARACTER", CHARACTERS_LIST);
-    settings_ui.add_selectable_option(1, 8,  "EMERALDS", EMERALDS_LIST);
-    settings_ui.add_selectable_option(1, 10, "SHIELD", SHIELDS_LIST);
-    settings_ui.add_selectable_option(1, 12, "MUSIC", { "ON", "OFF" });
-    settings_ui.add_selectable_option(1, 14, "LOWER BOSS HITCOUNT", { "NO", "YES" });
-    settings_ui.add_selectable_option(1, 16, "TIMER DURING PAUSE", { "OFF", "ON" });
-    settings_ui.add_selectable_option(1, 20, "ZONE", ZONES_LIST);
-    settings_ui.add_selectable_option(1, 22, "SPAWN", { "ACT 1", "ACT 2"});
-    settings_ui.add_string(1, 25, "______________________________________");
-    settings_ui.add_string(22, 26, "a PLAY    b BACK");
-
-    uint32_t gui_info_addr = settings_ui.inject(rom);
-    std::cout << "UI descriptor table is at " << std::hex << gui_info_addr << std::dec << std::endl;
-
-    md::Code proc_launch_gui;
-    proc_launch_gui.lea(addr_(gui_info_addr), reg_A4);
-    proc_launch_gui.jmp(ui_engine.func_boot_ui());
-    rom.set_long(0x4C6, rom.inject_code(proc_launch_gui));
 }

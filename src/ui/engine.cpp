@@ -5,6 +5,8 @@
 
 namespace mdui {
 
+// TODO: cable option values to real gameplay values
+// TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
 // TODO: handle the no-value case for options
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
@@ -15,10 +17,6 @@ constexpr uint32_t VDP_data_port = 0xC00000;
 constexpr uint32_t VDP_control_port = 0xC00004;
 constexpr uint32_t Controller_1_data_port = 0xA10003;
 constexpr uint32_t Z80_bus_request = 0xA11100;
-
-constexpr uint8_t UI_MODE_DISABLED = 0x0;
-constexpr uint8_t UI_MODE_ENABLED = 0x1;
-constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
@@ -788,34 +786,6 @@ uint32_t Engine::func_handle_ui_controls()
     return _func_handle_ui_controls;
 }
 
-/**
- * Main loop refreshing the UI display and looking for user input
- */
-uint32_t Engine::func_ui_main_loop()
-{
-    if(_func_ui_main_loop)
-        return _func_ui_main_loop;
-    // ------------------------------------------------------------------------------------------
-
-    md::Code func;
-    func.label("begin"); // routine running during level select
-
-    // Handle controls, calling callback functions that have been associated to the layout if matching buttons are pressed
-    func.jsr(func_handle_ui_controls());
-
-    // Copy the plane map to VRAM
-    func.jsr(func_copy_plane_map_to_vram());
-
-    // Wait for the frame to be drawn by the VDP before processing another one
-    func.jsr(func_wait_vsync());
-
-    func.bra("begin");
-
-    // ------------------------------------------------------------------------------------------
-    _func_ui_main_loop = _rom.inject_code(func);
-    return _func_ui_main_loop;
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///        INITIAL BOOTUP HANDLING
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -876,8 +846,12 @@ uint32_t Engine::func_init_ui()
     func.orib(0x40, reg_D0);
     func.movew(reg_D0, addr_(VDP_control_port));
 
-    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
+    // Build the initial plane map and apply the initial selection (if any)
+    func.jsr(func_build_initial_plane_map());
+    func.movew(0x2000, reg_D3);
+    func.jsr(func_apply_selection_mapping());
 
+    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -901,11 +875,21 @@ uint32_t Engine::func_boot_ui()
 
     func.jsr(func_init_ui());
 
-    func.jsr(func_build_initial_plane_map());
-    func.movew(0x2000, reg_D3);
-    func.jsr(func_apply_selection_mapping());
+    func.label("main_loop");
+    // Handle controls, calling callback functions that have been associated to the layout if matching buttons are pressed
+    func.jsr(func_handle_ui_controls());
+    // If asked to, exit the UI
+    func.cmpib(UI_MODE_EXIT, addrw_(_ui_mode_ram_addr));
+    func.beq("exit_ui");
+    // Copy the plane map to VRAM
+    func.jsr(func_copy_plane_map_to_vram());
+    // Wait for the frame to be drawn by the VDP before processing another one
+    func.jsr(func_wait_vsync());
+    // Otherwise, just loop indefinitely
+    func.bra("main_loop");
 
-    func.jsr(func_ui_main_loop());
+    func.label("exit_ui");
+    func.moveb(0x0, addrw_(_ui_mode_ram_addr));
     func.rts();
 
     // ------------------------------------------------------------------------------------------

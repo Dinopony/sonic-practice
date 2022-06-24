@@ -36,10 +36,14 @@ private:
     uint32_t _func_init_ui = 0x0;
     uint32_t _func_build_initial_plane_map = 0x0;
     uint32_t _func_handle_ui_controls = 0x0;
-    uint32_t _func_ui_main_loop = 0x0;
     uint32_t _func_boot_ui = 0x0;
 
 public:
+    static constexpr uint8_t UI_MODE_DISABLED = 0x0;
+    static constexpr uint8_t UI_MODE_ENABLED = 0x1;
+    static constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
+    static constexpr uint8_t UI_MODE_EXIT = 0x2;
+
     explicit Engine(md::ROM& rom, uint32_t preinit_function_addr = 0x0) :
         _rom                    (rom),
         _preinit_function_addr  (preinit_function_addr)
@@ -86,7 +90,6 @@ public:
     uint32_t func_init_ui();
     uint32_t func_build_initial_plane_map();
     uint32_t func_handle_ui_controls();
-    uint32_t func_ui_main_loop();
     uint32_t func_boot_ui();
 };
 

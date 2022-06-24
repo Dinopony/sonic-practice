@@ -27,6 +27,9 @@ public:
     /// Makes the game display additionnal information when paused (such as position, last spindash speed...)
     virtual void display_additionnal_hud_on_pause(md::ROM& rom) = 0;
 
+    /// Overridable function enabling setup of member variables before any other patching procedure is executed
+    virtual void game_specific_initialization(md::ROM& rom) {}
+
     /// Overridable function containing patches that are specific to this game and would not make sense in any other game
     virtual void game_specific_patches(md::ROM& rom) {}
 
@@ -34,6 +37,8 @@ public:
     {
         this->mark_empty_chunks(rom);
         uint32_t empty = rom.remaining_empty_bytes();
+
+        this->game_specific_initialization(rom);
         this->skip_title_screen_to_level_select(rom);
         this->give_infinite_lives(rom);
         this->add_savestate_handling(rom);

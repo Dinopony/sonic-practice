@@ -116,7 +116,7 @@ void Info::add_selectable_option(uint8_t x, uint8_t y, const std::string& str, c
     if(!_selection_mappings.empty())
         option_id = last_option_id() + 1;
 
-    SelectionMapping mapping(option_id , x, y, 36);
+    SelectionMapping mapping(option_id, x, y, 37);
     _selection_mappings.emplace_back(mapping);
 
     std::vector<Text> option_values;
