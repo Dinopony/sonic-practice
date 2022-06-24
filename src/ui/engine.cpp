@@ -9,6 +9,7 @@ namespace mdui {
 // TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
+// TODO: change start icon in tileset + add a slash character (+ underline?)
 
 // Global RAM offsets that are always valid
 constexpr uint32_t RAM_start = 0xFFFF0000;
@@ -794,16 +795,58 @@ uint32_t Engine::func_handle_ui_controls()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///        INITIAL BOOTUP HANDLING
+///        INITIAL BOOTUP AND CORE HANDLING
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Initialize all the required things for the UI to work properly
+ * Schedule a change of UI for the next frame, letting the rest of events in current frame unroll.
+ *
+ * Input:
+ *      - A0: address on the new UI to display
  */
-uint32_t Engine::func_init_ui()
+uint32_t Engine::func_schedule_ui_change()
 {
-    if(_func_init_ui)
-        return _func_init_ui;
+    if(_func_schedule_ui_change)
+        return _func_schedule_ui_change;
+    // ------------------------------------------------------------------------------------------
+    md::Code func;
+
+    func.moveb(mdui::Engine::UI_MODE_CHANGE, addrw_(_ui_mode_ram_addr));
+    func.movel(reg_A0, addrw_(_next_ui_addr));
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_schedule_ui_change = _rom.inject_code(func);
+    return _func_schedule_ui_change;
+}
+
+/**
+ * Schedule exiting the UI for the next frame, letting the rest of events in current frame unroll.
+ */
+uint32_t Engine::func_schedule_ui_exit()
+{
+    if(_func_schedule_ui_exit)
+        return _func_schedule_ui_exit;
+    // ------------------------------------------------------------------------------------------
+    md::Code func;
+
+    func.moveb(mdui::Engine::UI_MODE_EXIT, addrw_(_ui_mode_ram_addr));
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_schedule_ui_exit = _rom.inject_code(func);
+    return _func_schedule_ui_exit;
+}
+
+
+/**
+ * Initialize all the required things for the UI engine to work properly.
+ * This only need to be called once at the beginning of the UI session.
+ */
+uint32_t Engine::func_init_engine()
+{
+    if(_func_init_engine)
+        return _func_init_engine;
     // ------------------------------------------------------------------------------------------
 
     uint32_t gui_tileset_addr = _rom.inject_bytes(GUI_TILESET, GUI_TILESET_SIZE);
@@ -838,6 +881,33 @@ uint32_t Engine::func_init_ui()
     func.lea(addr_(gui_tileset_addr), reg_A0);
     func.jsr(func_nemesis_decomp());
 
+    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_init_engine = _rom.inject_code(func);
+    return _func_init_engine;
+}
+
+/**
+ * Initialize all the things related to the specific UI we are going to display.
+ * This needs to be called every time a new UI is starting to be displayed.
+ */
+uint32_t Engine::func_init_ui()
+{
+    if(_func_init_ui)
+        return _func_init_ui;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+
+    func.lea(addr_(RAM_start), reg_A1);
+    func.clrl(reg_D0);
+    func.movew(0x8C0 / 2, reg_D0);
+    func.label("loop_clear_plane_map");
+    func.movew(0, addr_postinc_(reg_A1));
+    func.dbra(reg_D0, "loop_clear_plane_map");
+
     // Init palettes
     constexpr uint16_t PALETTE_0_ADDR = 0xFC00;
     func.lea(addr_(reg_A4, Info::COLOR_PALETTES_OFFSET), reg_A1);
@@ -858,7 +928,6 @@ uint32_t Engine::func_init_ui()
     func.movew(0x2000, reg_D3);
     func.jsr(func_apply_selection_mapping());
 
-    func.moveb(UI_MODE_ENABLED, addr_(_ui_mode_ram_addr));
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -880,6 +949,9 @@ uint32_t Engine::func_boot_ui()
 
     md::Code func;
 
+    func.jsr(func_init_engine());
+
+    func.label("init_ui");
     func.jsr(func_init_ui());
 
     func.label("main_loop");
@@ -888,6 +960,9 @@ uint32_t Engine::func_boot_ui()
     // If asked to, exit the UI
     func.cmpib(UI_MODE_EXIT, addrw_(_ui_mode_ram_addr));
     func.beq("exit_ui");
+    func.cmpib(UI_MODE_CHANGE, addrw_(_ui_mode_ram_addr));
+    func.beq("ui_change");
+
     // Copy the plane map to VRAM
     func.jsr(func_copy_plane_map_to_vram());
     // Wait for the frame to be drawn by the VDP before processing another one
@@ -896,8 +971,14 @@ uint32_t Engine::func_boot_ui()
     func.bra("main_loop");
 
     func.label("exit_ui");
-    func.moveb(0x0, addrw_(_ui_mode_ram_addr));
+    func.moveb(UI_MODE_DISABLED, addrw_(_ui_mode_ram_addr));
+    func.moveb(0x0, addrw_(0xFF69));
     func.rts();
+
+    func.label("ui_change");
+    func.moveb(UI_MODE_ENABLED, addrw_(_ui_mode_ram_addr));
+    func.movel(addrw_(_next_ui_addr), reg_A4);
+    func.bra("init_ui");
 
     // ------------------------------------------------------------------------------------------
     _func_boot_ui = _rom.inject_code(func);

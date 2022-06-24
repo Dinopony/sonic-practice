@@ -11,11 +11,12 @@ private:
     uint32_t _preinit_function_addr = 0x0;
     uint8_t _alignment_helper_character = 0x3A; ///< Character used to align option labels and their values (defaults to '%')
 
-    uint32_t _ui_mode_ram_addr        = 0xFFFFFF80; ///< the RAM address where the "UI Mode" state is stored (byte)
-    uint32_t _input_bits_ram_addr     = 0xFFFFFF81; ///< the RAM address where the currently pressed input bits are stored (byte)
-    uint32_t _input_repeat_ram_addr   = 0xFFFFFF82; ///< the RAM address where the input repeat frame counter is located (byte)
-    uint32_t _current_option_ram_addr = 0xFFFFFF83; ///< the RAM address where the currently selected option is stored (byte)
-    uint32_t _option_values_start_ram_addr = 0xFFFFFF84; ///< the RAM address the currently selected value for each option is stored (byte)
+    uint32_t _ui_mode_ram_addr        = 0xFFFFFF80;      ///< the RAM address where the "UI Mode" state is stored (byte)
+    uint32_t _input_bits_ram_addr     = 0xFFFFFF81;      ///< the RAM address where the currently pressed input bits are stored (byte)
+    uint32_t _input_repeat_ram_addr   = 0xFFFFFF82;      ///< the RAM address where the input repeat frame counter is located (byte)
+    uint32_t _current_option_ram_addr = 0xFFFFFF83;      ///< the RAM address where the currently selected option is stored (byte)
+    uint32_t _next_ui_addr            = 0xFFFFFF84;      ///< the RAM address where a pointer on the next UI to display is stored (long)
+    uint32_t _option_values_start_ram_addr = 0xFFFFFF88; ///< the RAM address the currently selected value for each option is stored (byte)
 
     uint32_t _func_get_option_value_text_addr = 0x0;
     uint32_t _func_draw_all_option_values = 0x0;
@@ -33,6 +34,10 @@ private:
     uint32_t _func_draw_text = 0x0;
     uint32_t _func_poll_controller = 0x0;
     uint32_t _func_v_int = 0x0;
+
+    uint32_t _func_schedule_ui_change = 0x0;
+    uint32_t _func_schedule_ui_exit = 0x0;
+    uint32_t _func_init_engine = 0x0;
     uint32_t _func_init_ui = 0x0;
     uint32_t _func_build_initial_plane_map = 0x0;
     uint32_t _func_handle_ui_controls = 0x0;
@@ -43,6 +48,7 @@ public:
     static constexpr uint8_t UI_MODE_ENABLED = 0x1;
     static constexpr uint8_t UI_MODE_V_INT_OCCURRED = 0x2;
     static constexpr uint8_t UI_MODE_EXIT = 0x2;
+    static constexpr uint8_t UI_MODE_CHANGE = 0x3;
 
     explicit Engine(md::ROM& rom, uint32_t preinit_function_addr = 0x0) :
         _rom                    (rom),
@@ -87,6 +93,10 @@ public:
     uint32_t func_draw_text();
     uint32_t func_poll_controller();
     uint32_t func_v_int();
+
+    uint32_t func_schedule_ui_change();
+    uint32_t func_schedule_ui_exit();
+    uint32_t func_init_engine();
     uint32_t func_init_ui();
     uint32_t func_build_initial_plane_map();
     uint32_t func_handle_ui_controls();

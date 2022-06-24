@@ -50,6 +50,7 @@ set(SOURCES
         src/patches/game_patch_s3k.hpp
         src/patches/game_patch_s3k.cpp
         src/patches/game_patch_s3k_main_menu.cpp
+        src/patches/game_patch_s3k_play_menu.cpp
         src/patches/game_patch.hpp
 
         # --- Tools ----------------------------------------
