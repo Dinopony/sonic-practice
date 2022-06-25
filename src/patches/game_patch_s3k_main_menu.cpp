@@ -4,6 +4,7 @@
 uint32_t GamePatchS3K::inject_main_menu_press_a_handler(md::ROM& rom)
 {
     uint32_t play_menu_addr = inject_play_menu(rom);
+    std::cout << "Play Menu is at " << std::hex << play_menu_addr << std::dec << std::endl;
 
     md::Code func;
     func.movem_to_stack({}, { reg_A0 });

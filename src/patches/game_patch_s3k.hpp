@@ -14,17 +14,26 @@ private:
     static constexpr uint16_t RING_COUNT = 0xFE20;
     static constexpr uint16_t TIMER = 0xFE22;
     static constexpr uint16_t SCORE = 0xFE26;
-    static constexpr uint16_t RING_COUNT_P2 = 0xFED0;
-    static constexpr uint16_t TIMER_P2 = 0xFED2;
-    static constexpr uint16_t SCORE_P2 = 0xFED6;
     static constexpr uint16_t CONTINUE_COUNT = 0xFE18;
     static constexpr uint16_t DEMO_MODE_FLAG = 0xFFD0;
     static constexpr uint16_t COMPETITION_SETTINGS = 0xFF8A;
     static constexpr uint16_t COMPETITION_MODE = 0xFFE8;
     static constexpr uint16_t GAME_MODE = 0xF600;
     static constexpr uint16_t LIFE_COUNT = 0xFE12;
-    static constexpr uint16_t LIFE_COUNT_P2 = 0xFEC6;
     static constexpr uint16_t NEXT_EXTRA_LIFE_SCORE = 0xFFC0;
+    static constexpr uint16_t CHARACTER_PLAYED = 0xFF0A; ///< 0000 = Sonic & Tails, 0001 = Sonic, 0002 = Tails, 0003 = Knuckles
+    static constexpr uint16_t EMERALDS_COUNT = 0xFFB0;
+    static constexpr uint16_t SUPER_EMERALDS_COUNT = 0xFFB1;
+    static constexpr uint16_t LAST_STARPOLE_HIT = 0xFE2A;
+    static constexpr uint16_t LEVEL_STARTED_FLAG = 0xF711;
+    static constexpr uint16_t SAVE_POINTER = 0xE660;
+    static constexpr uint16_t CAMERA_X_POS = 0xEE78;
+    static constexpr uint16_t CAMERA_Y_POS = 0xEE7C;
+    static constexpr uint16_t COLLECTED_BIG_RINGS_ARRAY = 0xFF92;
+    static constexpr uint16_t RING_COUNT_P2 = 0xFED0;
+    static constexpr uint16_t TIMER_P2 = 0xFED2;
+    static constexpr uint16_t SCORE_P2 = 0xFED6;
+    static constexpr uint16_t LIFE_COUNT_P2 = 0xFEC6;
     static constexpr uint16_t NEXT_EXTRA_LIFE_SCORE_P2 = 0xFFC4;
 
     mdui::Engine* _engine = nullptr;
@@ -47,6 +56,7 @@ public:
     {
         uint32_t func_s3k_preinit = inject_func_preinit_s3k(rom);
         _engine = new mdui::Engine(rom, func_s3k_preinit);
+    //    _engine->option_values_start_ram_addr(0xF79A); // TODO: Makes the game crash when booting the second UI
     }
 
     void game_specific_patches(md::ROM& rom) override {}
