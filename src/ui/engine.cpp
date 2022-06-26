@@ -802,7 +802,7 @@ uint32_t Engine::func_handle_ui_controls()
  * Schedule a change of UI for the next frame, letting the rest of events in current frame unroll.
  *
  * Input:
- *      - A0: address on the new UI to display
+ *      - A0: address on the new UI to display, or 0xFFFFFFFF to go back to previous UI
  */
 uint32_t Engine::func_schedule_ui_change()
 {
@@ -812,7 +812,10 @@ uint32_t Engine::func_schedule_ui_change()
     md::Code func;
 
     func.moveb(mdui::Engine::UI_MODE_CHANGE, addrw_(_ui_mode_ram_addr));
+    func.cmpa(0xFFFFFFFF, reg_A0);
+    func.beq("return");
     func.movel(reg_A0, addrw_(_next_ui_addr));
+    func.label("return");
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -977,7 +980,9 @@ uint32_t Engine::func_boot_ui()
 
     func.label("ui_change");
     func.moveb(UI_MODE_ENABLED, addrw_(_ui_mode_ram_addr));
+    func.movel(reg_A4, reg_A1);
     func.movel(addrw_(_next_ui_addr), reg_A4);
+    func.movel(reg_A1, addrw_(_next_ui_addr)); // Put the previous UI back there to make going back easy if needed
     func.bra("init_ui");
 
     // ------------------------------------------------------------------------------------------

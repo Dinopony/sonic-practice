@@ -23,6 +23,20 @@ static uint32_t inject_zone_id_matching_table(md::ROM& rom)
     return rom.inject_bytes(zone_id_matching_table);
 }
 
+uint32_t GamePatchS3K::inject_play_menu_press_b_handler(md::ROM& rom)
+{
+    md::Code func;
+    func.movem_to_stack({}, { reg_A0 });
+
+    func.lea(addr_(0xFFFFFFFF), reg_A0);
+    func.jsr(_engine->func_schedule_ui_change());
+
+    func.movem_from_stack({}, { reg_A0 });
+    func.rts();
+
+    return rom.inject_code(func);
+}
+
 uint32_t GamePatchS3K::inject_play_menu_press_a_handler(md::ROM& rom)
 {
     uint32_t zone_id_matching_table = inject_zone_id_matching_table(rom);
@@ -146,6 +160,9 @@ uint32_t GamePatchS3K::inject_play_menu(md::ROM& rom)
 
     uint32_t press_a_handler = inject_play_menu_press_a_handler(rom);
     play_menu.on_a_pressed(press_a_handler);
+
+    uint32_t press_b_handler = inject_play_menu_press_b_handler(rom);
+    play_menu.on_b_pressed(press_b_handler);
 
     return play_menu.inject(rom);
 }

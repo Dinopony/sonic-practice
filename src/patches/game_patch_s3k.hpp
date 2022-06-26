@@ -67,6 +67,7 @@ private:
     uint32_t inject_main_menu_press_a_handler(md::ROM& rom);
     uint32_t inject_main_menu(md::ROM& rom);
 
+    uint32_t inject_play_menu_press_b_handler(md::ROM& rom);
     uint32_t inject_play_menu_press_a_handler(md::ROM& rom);
     uint32_t inject_play_menu(md::ROM& rom);
 
