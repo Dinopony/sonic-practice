@@ -56,7 +56,7 @@ public:
     {
         uint32_t func_s3k_preinit = inject_func_preinit_s3k(rom);
         _engine = new mdui::Engine(rom, func_s3k_preinit);
-    //    _engine->option_values_start_ram_addr(0xF79A); // TODO: Makes the game crash when booting the second UI
+        _engine->option_values_start_ram_addr(0xFFFFF79A);
     }
 
     void game_specific_patches(md::ROM& rom) override {}

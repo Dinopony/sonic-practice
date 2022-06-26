@@ -39,6 +39,7 @@ namespace md
         Code& cmpil(uint32_t value, const Param& other) { return this->cmpi(ImmediateValue(value), other, Size::LONG); }
         
         Code& cmpa(const Param& value, const AddressRegister& reg);
+        Code& cmpa(uint32_t value, const AddressRegister& reg) { return this->cmpa(lval_(value), reg); }
 
         Code& tst(const Param& target, Size size);
         Code& tstb(const Param& target) { return this->tst(target, Size::BYTE); }

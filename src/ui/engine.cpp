@@ -5,7 +5,7 @@
 
 namespace mdui {
 
-// TODO: cable option values to real gameplay values
+// TODO: add a word inside option values description (before array size) which contains a RAM address indicating where to store the option value
 // TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
 // TODO: on init, load options from SRAM
 // TODO: allow moving the plane map (changes references to RAM_Start)
@@ -48,7 +48,7 @@ uint32_t Engine::func_get_option_value_text_addr()
     func.lslw(2, reg_D0);
     func.adda(reg_D0, reg_A1);
     func.movel(addr_(reg_A1), reg_A1);
-    func.cmpa(addr_(0x0), reg_A1);
+    func.cmpa(0x00000000, reg_A1);
     func.beq("return");
     func.addql(0x2, reg_A1);
 
@@ -56,10 +56,10 @@ uint32_t Engine::func_get_option_value_text_addr()
     func.label("loop_skip_texts");
     func.tstb(reg_D1);
     func.beq("return");
-    func.addql(0x2, reg_A1);
-    func.moveb(addr_postinc_(reg_A1), reg_D0);
+    func.addql(0x2, reg_A1);                    // skip position bytes
+    func.moveb(addr_postinc_(reg_A1), reg_D0);  // string size - 1 --> D0
     func.addqb(0x1, reg_D0);
-    func.adda(reg_D0, reg_A1);
+    func.adda(reg_D0, reg_A1);                  // skip as many bytes as the string contains
     // Skip the padding byte if there is one
     func.cmpib(0xFE, addr_(reg_A1));
     func.bne("no_padding_byte");
@@ -92,7 +92,7 @@ uint32_t Engine::func_draw_all_option_values()
     func.clrl(reg_D2);
     func.movew(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D2);
 
-    func.lea(addr_(_option_values_start_ram_addr), reg_A2);
+    func.lea(addrw_(_option_values_start_ram_addr), reg_A2);
     func.clrl(reg_D0);
 
     func.label("loop");
@@ -101,7 +101,7 @@ uint32_t Engine::func_draw_all_option_values()
     func.moveb(addr_postinc_(reg_A2), reg_D1);
     // Draw the text for value D1 of option D0
     func.jsr(func_get_option_value_text_addr()); // --> A1
-    func.cmpa(addr_(0x0), reg_A1);
+    func.cmpa(0x00000000, reg_A1);
     func.beq("next_option");
     func.jsr(func_draw_alignment_helper_line());
     func.jsr(func_draw_text());
@@ -179,7 +179,7 @@ uint32_t Engine::func_set_option_value()
     func.moveb(reg_D1, reg_D2);
     func.moveb(addr_(reg_A0), reg_D1);
     func.jsr(func_get_option_value_text_addr()); // --> A1
-    func.cmpa(addr_(0x0), reg_A1);
+    func.cmpa(0x00000000, reg_A1);
     func.beq("return");
     func.jsr(func_erase_text());
 
