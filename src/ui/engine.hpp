@@ -11,19 +11,19 @@ private:
     uint32_t _preinit_function_addr = 0x0;
     uint8_t _alignment_helper_character = 0x3A; ///< Character used to align option labels and their values (defaults to '%')
 
-    uint32_t _ui_mode_ram_addr        = 0xFFFFFF80;      ///< the RAM address where the "UI Mode" state is stored (byte)
-    uint32_t _input_bits_ram_addr     = 0xFFFFFF81;      ///< the RAM address where the currently pressed input bits are stored (byte)
-    uint32_t _input_repeat_ram_addr   = 0xFFFFFF82;      ///< the RAM address where the input repeat frame counter is located (byte)
-    uint32_t _current_option_ram_addr = 0xFFFFFF83;      ///< the RAM address where the currently selected option is stored (byte)
-    uint32_t _next_ui_addr            = 0xFFFFFF84;      ///< the RAM address where a pointer on the next UI to display is stored (long)
-    uint32_t _option_values_start_ram_addr = 0xFFFFFF88; ///< the RAM address the currently selected value for each option is stored (byte)
+    uint32_t _ui_mode_ram_addr            = 0xFFFFFF80; ///< the RAM address where the "UI Mode" state is stored (byte)
+    uint32_t _input_bits_ram_addr         = 0xFFFFFF81; ///< the RAM address where the currently pressed input bits are stored (byte)
+    uint32_t _input_repeat_ram_addr       = 0xFFFFFF82; ///< the RAM address where the input repeat frame counter is located (byte)
+    uint32_t _current_selectable_ram_addr = 0xFFFFFF83; ///< the RAM address where the currently selected option is stored (byte)
+    uint32_t _next_ui_addr                = 0xFFFFFF84; ///< the RAM address where a pointer on the next UI to display is stored (long)
 
-    uint32_t _func_get_option_value_text_addr = 0x0;
-    uint32_t _func_draw_all_option_values = 0x0;
-    uint32_t _func_get_option_value = 0x0;
+    uint32_t _func_get_selectable_addr = 0x0;
+    uint32_t _func_get_selectable_value_text_addr = 0x0;
+    uint32_t _func_draw_all_selectable_values = 0x0;
+    uint32_t _func_get_selectable_value = 0x0;
     uint32_t _func_set_option_value = 0x0;
-    uint32_t _func_get_option_maximum_value = 0x0;
-    uint32_t _func_set_selected_option = 0x0;
+    uint32_t _func_get_selectable_maximum_value = 0x0;
+    uint32_t _func_set_current_selectable = 0x0;
     uint32_t _func_set_palette = 0x0;
     uint32_t _func_apply_selection_mapping = 0x0;
     uint32_t _func_nemesis_decomp = 0x0;
@@ -69,19 +69,17 @@ public:
     [[nodiscard]] uint32_t input_repeat_ram_addr() const { return _input_repeat_ram_addr; }
     void input_repeat_ram_addr(uint32_t addr) { _input_repeat_ram_addr = addr; }
 
-    [[nodiscard]] uint32_t current_option_ram_addr() const { return _current_option_ram_addr; }
-    void current_option_ram_addr(uint32_t addr) { _current_option_ram_addr = addr; }
+    [[nodiscard]] uint32_t current_selectable_addr() const { return _current_selectable_ram_addr; }
+    void current_selectable_addr(uint32_t addr) { _current_selectable_ram_addr = addr; }
 
-    [[nodiscard]] uint32_t option_values_start_ram_addr() const { return _option_values_start_ram_addr; }
-    void option_values_start_ram_addr(uint32_t addr) { _option_values_start_ram_addr = addr; }
-
-    uint32_t func_get_option_value_text_addr();
-    uint32_t func_draw_all_option_values();
-    uint32_t func_get_option_value();
+    uint32_t func_get_selectable_addr();
+    uint32_t func_get_selectable_value_text_addr();
+    uint32_t func_draw_all_selectable_values();
+    uint32_t func_get_selectable_value();
     uint32_t func_set_option_value();
-    uint32_t func_get_option_maximum_value();
+    uint32_t func_get_selectable_maximum_value();
 
-    uint32_t func_set_selected_option();
+    uint32_t func_set_current_selectable();
     uint32_t func_set_palette();
     uint32_t func_apply_selection_mapping();
 

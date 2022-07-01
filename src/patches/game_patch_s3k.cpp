@@ -23,6 +23,8 @@ void GamePatchS3K::skip_title_screen_to_level_select(md::ROM& rom)
 
     // Make "Sega Screen" gamemode point to the practice mod UI bootup procedure
     rom.set_long(0x4C6, boot_ui_addr);
+
+    std::cout << "func_set_current_selectable is at " << std::hex << _engine->func_set_current_selectable() << std::dec << std::endl;
 }
 
 void GamePatchS3K::give_infinite_lives(md::ROM& rom)

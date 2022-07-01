@@ -20,8 +20,13 @@ static uint8_t convert_char(char c)
         if(CONVERSION_TABLE[i] == c)
             return i + 0x0F;
     }
+
+    return 0x0F;
 }
 
+/**
+ * Convert the Text structure into bytes readable by the UI engine.
+ */
 ByteArray Text::as_bytes() const
 {
     ByteArray string_chars;
@@ -32,6 +37,11 @@ ByteArray Text::as_bytes() const
     output.add_word(_position.as_offset_word());
     output.add_byte(string_chars.size()-1);
     output.add_bytes(string_chars);
+
+    // Add a padding byte (recognizable 0xFE) in case we land on an odd address
+    if(output.size() % 2 != 0)
+        output.add_byte(0xFE);
+
     return output;
 }
 

@@ -40,7 +40,7 @@ set(SOURCES
         src/ui/info.hpp
         src/ui/info.cpp
         src/ui/position.hpp
-        src/ui/selection_mapping.hpp
+        src/ui/selectable.hpp
         src/ui/text.hpp
         src/ui/text.cpp
         src/ui/vertical_menu.hpp

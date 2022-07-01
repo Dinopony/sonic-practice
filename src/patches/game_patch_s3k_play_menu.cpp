@@ -44,12 +44,13 @@ uint32_t GamePatchS3K::inject_play_menu_press_a_handler(md::ROM& rom)
     md::Code func;
     func.movem_to_stack({ reg_D0 }, { reg_A0, reg_A1 });
 
-    func.lea(addrw_(_engine->option_values_start_ram_addr()), reg_A1);
+//    func.lea(addrw_(_engine->option_values_start_ram_addr()), reg_A1);
 
     // Selected character
-    func.moveb(addr_postinc_(reg_A1), addrw_(CHARACTER_PLAYED+1));
+    // func.moveb(addr_postinc_(reg_A1), addrw_(CHARACTER_PLAYED+1));
 
     // Emeralds count
+    // TODO: Read EMERALDS_COUNT, and if above 7, move the remainder to SUPER_EMERALDS_COUNT
     func.clrl(reg_D0);
     func.moveb(addr_postinc_(reg_A1), reg_D0);
     func.moveb(0, addrw_(SUPER_EMERALDS_COUNT));
@@ -61,6 +62,7 @@ uint32_t GamePatchS3K::inject_play_menu_press_a_handler(md::ROM& rom)
     func.moveb(reg_D0, addrw_(EMERALDS_COUNT));
 
     // Shield
+    // TODO: Make it work!
     func.moveb(addr_postinc_(reg_A1), reg_D0); // Contains 0x1, 0x2 or 0x3
     func.cmpib(0x3, reg_D0);
     func.bne("not_water_shield");
@@ -75,6 +77,7 @@ uint32_t GamePatchS3K::inject_play_menu_press_a_handler(md::ROM& rom)
 //    func.movem_from_stack({ reg_D0 }, { reg_A1 });
 
     // Selected zone and act
+    // TODO: Uniformize APPARENT_ZONE_AND_ACT, SAVED_ZONE_AND_ACT and SAVED_APPARENT_ZONE_AND_ACT with CURRENT_ZONE_AND_ACT
     func.clrl(reg_D0);
     func.moveb(addr_postinc_(reg_A1), reg_D0);  // Selected zone ID --> D0
     func.lea(addr_(zone_id_matching_table), reg_A0);
@@ -147,14 +150,14 @@ uint32_t GamePatchS3K::inject_play_menu(md::ROM& rom)
     mdui::VerticalMenu play_menu(rom, *_engine);
     play_menu.add_string(13, 1, "* PLAY LEVEL *");
     play_menu.add_string(0, 2, "________________________________________");
-    play_menu.add_selectable_option(1, 4,  "CHARACTER", CHARACTERS_LIST);
-    play_menu.add_selectable_option(1, 6,  "EMERALDS", EMERALDS_LIST);
-    play_menu.add_selectable_option(1, 8, "SHIELD", SHIELDS_LIST);
+    play_menu.add_selectable_option(1, 4, "CHARACTER", CHARACTER_PLAYED+1, CHARACTERS_LIST);
+    play_menu.add_selectable_option(1, 6, "EMERALDS", EMERALDS_COUNT, EMERALDS_LIST);
+    play_menu.add_selectable_option(1, 8, "SHIELD", 0xFE47, SHIELDS_LIST);
 //    play_menu.add_selectable_option(1, 12, "MUSIC", { "ON", "OFF" });
 //    play_menu.add_selectable_option(1, 14, "LOWER BOSS HITCOUNT", { "NO", "YES" });
 //    play_menu.add_selectable_option(1, 16, "TIMER DURING PAUSE", { "OFF", "ON" });
-    play_menu.add_selectable_option(1, 20, "ZONE", ZONES_LIST);
-    play_menu.add_selectable_option(1, 22, "SPAWN", { "ACT 1", "ACT 2"});
+    play_menu.add_selectable_option(1, 20, "ZONE", 0xFFDC, ZONES_LIST);
+    play_menu.add_selectable_option(1, 22, "SPAWN", 0xFFDD, { "ACT 1", "ACT 2"});
     play_menu.add_string(0, 25, "________________________________________");
     play_menu.add_string(20, 26, "a/c PLAY   b BACK");
 

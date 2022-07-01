@@ -1,28 +1,68 @@
 #include "engine.hpp"
 #include "info.hpp"
-#include "vertical_menu.hpp"
 #include "../../assets/nem_decomp.bin.hxx"
 
 namespace mdui {
 
-// TODO: add a word inside option values description (before array size) which contains a RAM address indicating where to store the option value
-// TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
-// TODO: on init, load options from SRAM
-// TODO: allow moving the plane map (changes references to RAM_Start)
+// TODO: rename "option" by "selectable" pretty much everywhere
+// TODO: Add padding byte removal to erase_text() to remove the trailing alignment character
+// TODO: Crash on left / right on value-less options
+
 // TODO: change start icon in tileset + add a slash character (+ underline?)
+// TODO: allow moving the plane map (changes references to RAM_Start)
+// TODO: on init, load options from SRAM
+// TODO: add some kind of checkered background sent as a one-shot on init (use color 0 from palettes for that?)
 
 // Global RAM offsets that are always valid
 constexpr uint32_t RAM_start = 0xFFFF0000;
 constexpr uint32_t VDP_data_port = 0xC00000;
 constexpr uint32_t VDP_control_port = 0xC00004;
 constexpr uint32_t Controller_1_data_port = 0xA10003;
-constexpr uint32_t Z80_bus_request = 0xA11100;
+// constexpr uint32_t Z80_bus_request = 0xA11100;
 
 #include "../../assets/gui_tileset.bin.hxx"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///        OPTIONS HANDLING
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Find the address of the given Selectable structure in the ROM
+ *
+ * Input:
+ *      - D0.b: selectable ID
+ *      - A4: pointer on the UI descriptor structure
+ * Output:
+ *      - A1: pointer on the Selectable structure
+ */
+uint32_t Engine::func_get_selectable_addr()
+{
+    if(_func_get_selectable_addr)
+        return _func_get_selectable_addr;
+    // ------------------------------------------------------------------------------------------
+
+    md::Code func;
+    func.movem_to_stack({ reg_D0 }, {});
+
+    // Find the address of the first value text for selectable D0, and store it in A1
+    func.movel(addr_(reg_A4, Info::SELECTABLES_OFFSET), reg_A1);
+    func.addql(0x2, reg_A1); // Skip array size word
+
+    // Add the appropriate offset to get address to Selectable #D0
+    func.andil(0x000000FF, reg_D0);
+    func.lslw(2, reg_D0);
+    func.adda(reg_D0, reg_A1);
+
+    // Resolve the address and store it in A1
+    func.movel(addr_(reg_A1), reg_A1);
+
+    func.movem_from_stack({ reg_D0 }, {});
+    func.rts();
+
+    // ------------------------------------------------------------------------------------------
+    _func_get_selectable_addr = _rom.inject_code(func);
+    return _func_get_selectable_addr;
+}
 
 /**
  * Find the address of the given value text for the given option.
@@ -33,38 +73,47 @@ constexpr uint32_t Z80_bus_request = 0xA11100;
  * Output:
  *      - A1: address pointing on the text (or 0x0 if text does not exist)
  */
-uint32_t Engine::func_get_option_value_text_addr()
+uint32_t Engine::func_get_selectable_value_text_addr()
 {
-    if(_func_get_option_value_text_addr)
-        return _func_get_option_value_text_addr;
+    if(_func_get_selectable_value_text_addr)
+        return _func_get_selectable_value_text_addr;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
     func.movem_to_stack({ reg_D0,reg_D1 }, {});
 
-    // Find the address of the first value text for option D0, and store it in A1
-    func.lea(addr_(reg_A4, Info::OPTION_VALUES_OFFSET), reg_A1);
-    func.andil(0x000000FF, reg_D0);
-    func.lslw(2, reg_D0);
-    func.adda(reg_D0, reg_A1);
-    func.movel(addr_(reg_A1), reg_A1);
-    func.cmpa(0x00000000, reg_A1);
-    func.beq("return");
-    func.addql(0x2, reg_A1);
+    func.jsr(func_get_selectable_addr()); // Selectable addr --> A1
 
-    // Skip D1 texts to reach the one we want to draw
+    // If we have no values for this selectable, just return a zero address
+    func.cmpib(0xFF, addr_(reg_A1, Selectable::VALUES_COUNT_OFFSET));
+    func.bne("has_values");
+    {
+        func.movel(0x0, reg_A1);
+        func.bra("return");
+    }
+    func.label("has_values");
+    func.adda(Selectable::VALUE_STRINGS_OFFSET, reg_A1);
+
+    // Skip D1 texts to reach the requested one
     func.label("loop_skip_texts");
-    func.tstb(reg_D1);
-    func.beq("return");
-    func.addql(0x2, reg_A1);                    // skip position bytes
-    func.moveb(addr_postinc_(reg_A1), reg_D0);  // string size - 1 --> D0
-    func.addqb(0x1, reg_D0);
-    func.adda(reg_D0, reg_A1);                  // skip as many bytes as the string contains
-    // Skip the padding byte if there is one
-    func.cmpib(0xFE, addr_(reg_A1));
-    func.bne("no_padding_byte");
-    func.addql(0x1, reg_A1);
-    func.label("no_padding_byte");
+    {
+        // If D1 reached 0, it means we already skipped all the strings we needed to skip
+        func.tstb(reg_D1);
+        func.beq("return");
+
+        func.addql(0x2, reg_A1);                    // skip position bytes
+        func.moveb(addr_postinc_(reg_A1), reg_D0);  // string size - 1 --> D0
+        func.addqb(0x1, reg_D0);
+        func.adda(reg_D0, reg_A1);                  // skip as many bytes as the string contains
+
+        // We want all text structures to begin on an even address because reading the string position word from an odd address is illegal.
+        // This is why, at injection time, we add a padding byte (an easily recognizable 0xFE) when needed to make sure next string starts at a valid address.
+        // Here, we check if we encounter this padding byte, and ignore it if that's the case.
+        func.cmpib(0xFE, addr_(reg_A1));
+        func.bne("no_padding_byte");
+        func.addql(0x1, reg_A1);
+        func.label("no_padding_byte");
+    }
     func.subqb(0x1, reg_D1);
     func.bra("loop_skip_texts");
 
@@ -73,94 +122,101 @@ uint32_t Engine::func_get_option_value_text_addr()
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_get_option_value_text_addr = _rom.inject_code(func);
-    return _func_get_option_value_text_addr;
+    _func_get_selectable_value_text_addr = _rom.inject_code(func);
+    return _func_get_selectable_value_text_addr;
 }
 
 /**
  * Draw the current value text for all options (typically used on UI boot)
  */
-uint32_t Engine::func_draw_all_option_values()
+uint32_t Engine::func_draw_all_selectable_values()
 {
-    if(_func_draw_all_option_values)
-        return _func_draw_all_option_values;
+    if(_func_draw_all_selectable_values)
+        return _func_draw_all_selectable_values;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
     func.movem_to_stack({ reg_D0, reg_D1 }, { reg_A1, reg_A2 });
 
-    func.clrl(reg_D2);
-    func.movew(addr_(reg_A4, Info::OPTION_COUNT_OFFSET), reg_D2);
-
-    func.lea(addrw_(_option_values_start_ram_addr), reg_A2);
-    func.clrl(reg_D0);
+    // Put the last option ID in D0
+    func.movel(addr_(reg_A4, Info::SELECTABLES_OFFSET), reg_A1);
+    func.movew(addr_(reg_A1), reg_D0);
 
     func.label("loop");
-    // D0 contains the currently processed option
-    // Store the option value ID in D1
-    func.moveb(addr_postinc_(reg_A2), reg_D1);
-    // Draw the text for value D1 of option D0
-    func.jsr(func_get_option_value_text_addr()); // --> A1
-    func.cmpa(0x00000000, reg_A1);
-    func.beq("next_option");
-    func.jsr(func_draw_alignment_helper_line());
-    func.jsr(func_draw_text());
-    // Go to next option
-    func.label("next_option");
-    func.addqb(1, reg_D0);
-    func.cmpb(reg_D2, reg_D0);
-    func.bgt("return");
-    func.bra("loop");
+    {
+        // Store the currently selected value for Selectable inside D1
+        func.jsr(func_get_selectable_value());
+        // For this Selectable, store the address of the currently selected value Text inside A1
+        func.jsr(func_get_selectable_value_text_addr());
+        func.cmpa(0x0, reg_A1);
+        func.beq("null_address");
+        {
+            // If we get a non-null address, we can draw the selectable value pointed by A1
+            func.jsr(func_draw_alignment_helper_line());
+            func.jsr(func_draw_text());
+        }
+        func.label("null_address");
+    }
+    func.dbra(reg_D0, "loop"); /// @TestMe: Doesn't this loop skip the first Selectable?
 
     func.label("return");
-    func.movew(0xFFFF, addr_postinc_(reg_A6));
-    func.movem_from_stack({ reg_D0, reg_D1 }, { reg_A1,reg_A2 });
+    /// @Polish: What is that?
+//    func.movew(0xFFFF, addr_postinc_(reg_A6));
+    func.movem_from_stack({ reg_D0, reg_D1 }, { reg_A1,reg_A2 }); /// @Polish: is A2 necessary here?
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_draw_all_option_values = _rom.inject_code(func);
-    return _func_draw_all_option_values;
+    _func_draw_all_selectable_values = _rom.inject_code(func);
+    return _func_draw_all_selectable_values;
 }
 
 /**
- * Get the current value for a given option
+ * Get the current value for a given Selectable
  *
  * Input:
- *      - DO.b: the option ID
+ *      - D0.b: the selectable ID
+ *      - A4: pointer on the UI descriptor structure
  * Output:
- *      - D1.b: the currently selected value for that option
+ *      - D1.b: the currently selected value for that option (or 0 if option has no values)
  */
-uint32_t Engine::func_get_option_value()
+uint32_t Engine::func_get_selectable_value()
 {
-    if(_func_get_option_value)
-        return _func_get_option_value;
+    if(_func_get_selectable_value)
+        return _func_get_selectable_value;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({}, { reg_A0 });
+    func.movem_to_stack({}, { reg_A0, reg_A1 });
 
-    // Get the address where the current value for this option is stored, and put it in A0
-    func.lea(addrw_(_option_values_start_ram_addr), reg_A0);
-    func.adda(reg_D0, reg_A0);
+    // Get the address of Selectable #D0, and store it in A1
+    func.jsr(func_get_selectable_addr());
 
-    // Fetch the current value ID for this option, and store it in D1
+    // Get the address where current value is stored in RAM for this Selectable, and store it in A0
+    func.movel(0xFFFF0000, reg_A0);
+    func.movew(addr_(reg_A1, Selectable::VALUE_STORAGE_ADDRESS_OFFSET), reg_A0);
     func.clrl(reg_D1);
-    func.moveb(addr_(reg_A0), reg_D1);
-
-    func.movem_from_stack({}, { reg_A0 });
+    func.cmpa(0xFFFFFFFF, reg_A0);
+    func.beq("no_value");
+    {
+        // Fetch the current value ID for this option, and store it in D1
+        func.moveb(addr_(reg_A0), reg_D1);
+    }
+    func.label("no_value");
+    func.movem_from_stack({}, { reg_A0, reg_A1 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_get_option_value = _rom.inject_code(func);
-    return _func_get_option_value;
+    _func_get_selectable_value = _rom.inject_code(func);
+    return _func_get_selectable_value;
 }
 
 /**
  * Set the value for a given option, updating all graphics accordingly
  *
  * Input:
- *      - DO.b: the option ID
+ *      - D0.b: the option ID
  *      - D1.b: the new value for that option
+ *      - A4: pointer on the UI descriptor
  */
 uint32_t Engine::func_set_option_value()
 {
@@ -171,26 +227,31 @@ uint32_t Engine::func_set_option_value()
     md::Code func;
     func.movem_to_stack({}, { reg_A1 });
 
-    // Get the address where the current value for this option is stored, and put it in A0
-    func.lea(addrw_(_option_values_start_ram_addr), reg_A0);
-    func.adda(reg_D0, reg_A0);
+    // Get the address of Selectable #D0, and store it in A1
+    func.jsr(func_get_selectable_addr());
+
+    // Get the address where current value is stored in RAM for this Selectable, and store it in A0
+    func.movel(0xFFFF0000, reg_A0);
+    func.movew(addr_(reg_A1, Selectable::VALUE_STORAGE_ADDRESS_OFFSET), reg_A0);
 
     // Erase the old value text
     func.moveb(reg_D1, reg_D2);
-    func.moveb(addr_(reg_A0), reg_D1);
-    func.jsr(func_get_option_value_text_addr()); // --> A1
-    func.cmpa(0x00000000, reg_A1);
-    func.beq("return");
-    func.jsr(func_erase_text());
+    func.moveb(addr_(reg_A0), reg_D1);               // Put current value ID in D1
+    func.jsr(func_get_selectable_value_text_addr()); // Address for current value's text --> A1
+    func.cmpa(0x0, reg_A1);
+    func.beq("has_no_values");
+    {
+        func.jsr(func_erase_text());
 
-    // Set the new value, and draw its text
-    func.moveb(reg_D2, reg_D1);
-    func.moveb(reg_D1, addr_(reg_A0));
-    func.jsr(func_get_option_value_text_addr()); // --> A1
-    func.jsr(func_draw_text());
+        // Set the new value, and draw its text
+        func.moveb(reg_D2, reg_D1);
+        func.moveb(reg_D1, addr_(reg_A0));               // Put new value ID in D1
+        func.jsr(func_get_selectable_value_text_addr()); // Address for new value's text --> A1
+        func.jsr(func_draw_text());
 
-    func.movem_from_stack({}, { reg_A1 });
-    func.label("return");
+        func.movem_from_stack({}, { reg_A1 });
+    }
+    func.label("has_no_values");
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -202,59 +263,59 @@ uint32_t Engine::func_set_option_value()
  * Read the maximum value for a given option.
  *
  * Input:
- *      - DO.b: the option ID to get the maximum value for
+ *      - D0.b: the Selectable ID to get the maximum value for
  *      - A4: pointer on the UI descriptor
  * Output:
- *      - D2.b: the maximum value for this option
+ *      - D2.b: the maximum value for this Selectable
  */
-uint32_t Engine::func_get_option_maximum_value()
+uint32_t Engine::func_get_selectable_maximum_value()
 {
-    if(_func_get_option_maximum_value)
-        return _func_get_option_maximum_value;
+    if(_func_get_selectable_maximum_value)
+        return _func_get_selectable_maximum_value;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
     func.movem_to_stack({}, { reg_A1 });
 
-    func.lea(addr_(reg_A4, Info::OPTION_VALUES_OFFSET), reg_A1);
+    // Get the address for Selectable #D0, and store it in A1
+    func.jsr(func_get_selectable_addr());
+
+    // Read the appropriate offset to get the values count for this Selectable
+    func.lea(addr_(reg_A1, Selectable::VALUES_COUNT_OFFSET), reg_A1);
     func.clrl(reg_D2);
-    func.moveb(reg_D0, reg_D2);
-    func.lslw(2, reg_D2);
-    func.adda(reg_D2, reg_A1);
-    func.movel(addr_(reg_A1), reg_A1);
-    func.movew(addr_(reg_A1), reg_D2);
+    func.moveb(addr_(reg_A1), reg_D2);
 
     func.movem_from_stack({}, { reg_A1 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_get_option_maximum_value = _rom.inject_code(func);
-    return _func_get_option_maximum_value;
+    _func_get_selectable_maximum_value = _rom.inject_code(func);
+    return _func_get_selectable_maximum_value;
 }
 
 /**
- * Changes the currently selected option, updating the layout accordingly using the selection mappings
+ * Changes the currently selected Selectable, updating the layout accordingly
  *
  * Input:
- *      - D0.b: New option to select
+ *      - D0.b: ID of the new Selectable to select
  */
-uint32_t Engine::func_set_selected_option()
+uint32_t Engine::func_set_current_selectable()
 {
-    if(_func_set_selected_option)
-        return _func_set_selected_option;
+    if(_func_set_current_selectable)
+        return _func_set_current_selectable;
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
     func.movem_to_stack({ reg_D3 }, {});
 
-    // Apply a neutral palette to previously selected option
+    // Apply a neutral palette to previous selection
     func.movew(0x0000, reg_D3);
     func.jsr(func_apply_selection_mapping());
 
     // Change the currently selected option
-    func.moveb(reg_D0, addrw_(_current_option_ram_addr));
+    func.moveb(reg_D0, addrw_(_current_selectable_ram_addr));
 
-    // Apply a highlighted palette to newly selected option
+    // Apply a highlighted palette to the new selection
     func.movew(0x2000, reg_D3);
     func.jsr(func_apply_selection_mapping());
 
@@ -262,8 +323,8 @@ uint32_t Engine::func_set_selected_option()
     func.rts();
 
     // ------------------------------------------------------------------------------------------
-    _func_set_selected_option = _rom.inject_code(func);
-    return _func_set_selected_option;
+    _func_set_current_selectable = _rom.inject_code(func);
+    return _func_set_current_selectable;
 }
 
 /**
@@ -320,7 +381,7 @@ uint32_t Engine::func_apply_selection_mapping()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.movem_to_stack({ reg_D0,reg_D1,reg_D2,reg_D4 }, { reg_A2,reg_A3 });
+    func.movem_to_stack({ reg_D0,reg_D1,reg_D2 }, { reg_A1,reg_A2 });
 
     // Set plane map starting address in A2
     func.lea(addr_(RAM_start), reg_A2);
@@ -328,38 +389,21 @@ uint32_t Engine::func_apply_selection_mapping()
     // Mask argument passed in D3 so it cannot alter the tile attributes other than palette ID
     func.andiw(0x6000, reg_D3);
 
-    // Resolve address of selection mappings table and store it in A3
-    func.movel(addr_(reg_A4, VerticalMenu::SELECTION_MAPPINGS_OFFSET), reg_A3);
-
     // Store currently selected option in D0
     func.clrl(reg_D0);
-    func.moveb(addr_(_current_option_ram_addr), reg_D0);
+    func.moveb(addr_(_current_selectable_ram_addr), reg_D0);
 
-    // Format of data inside table pointed by A3 is [option_id.b, x.b, y.b, size.b]
-    // Iterate over data, finding option_id that match with currently selected option
-    func.label("loop");
-    // If option_id is 0xFF, it means we reached end of table
-    func.cmpib(0xFF, addr_(reg_A3));
-    func.beq("return");
-    // If option_id matches D0 (currently selected option), process it. Otherwise, skip it.
-    func.cmpb(addr_postinc_(reg_A3), reg_D0);
-    func.bne("next_mapping");
-
-    // Selected option found: read X, Y and Size, then call the palette change function
-    func.clrl(reg_D2);
-    func.moveb(addr_postinc_(reg_A3), reg_D2); // Size in D2.b
+    // Get the address for Selectable #D0, and store it in A1
+    func.jsr(func_get_selectable_addr());
+    // Read the coloring data from Selectable structure, and call the set_palette function
     func.clrl(reg_D1);
-    func.movew(addr_postinc_(reg_A3), reg_D1); // Position offset in D1.w
+    func.clrl(reg_D2);
+    func.movew(addr_(reg_A1, Selectable::COLORING_POSITION_OFFSET), reg_D1);
+    func.moveb(addr_(reg_A1, Selectable::COLORING_SIZE_OFFSET), reg_D2);
     func.jsr(func_set_palette());
-    func.bra("loop");
-
-    // Not the option we are looking for: skip it
-    func.label("next_mapping");
-    func.addqw(0x3, reg_A3);
-    func.bra("loop");
 
     func.label("return");
-    func.movem_from_stack({ reg_D0,reg_D1,reg_D2,reg_D4 }, { reg_A2,reg_A3 });
+    func.movem_from_stack({ reg_D0,reg_D1,reg_D2 }, { reg_A1,reg_A2 });
     func.rts();
 
     // ------------------------------------------------------------------------------------------
@@ -595,10 +639,12 @@ uint32_t Engine::func_erase_text()
 
     // Iterate D2 times to put a placeholder character in place of the option text into the RAM
     func.label("loop_erase_letter");
-    func.movew(addr_(reg_A2), reg_D0);              // Fetch data already present in the plane map
-    func.andiw(0x6000, reg_D0);                     // Filter everything but the palette info (in order to keep palette)
-    func.orib(_alignment_helper_character, reg_D0); // Set the new tile ID to the alignement helper character
-    func.movew(reg_D0, addr_postinc_(reg_A2));      // Send the new data back inside the plane map
+    {
+        func.movew(addr_(reg_A2), reg_D0);              // Fetch data already present in the plane map
+        func.andiw(0x6000, reg_D0);                     // Filter everything but the palette info (in order to keep palette)
+        func.orib(_alignment_helper_character, reg_D0); // Set the new tile ID to the alignement helper character
+        func.movew(reg_D0, addr_postinc_(reg_A2));      // Send the new data back inside the plane map
+    }
     func.dbra(reg_D2, "loop_erase_letter");
 
     func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
@@ -632,7 +678,7 @@ uint32_t Engine::func_draw_alignment_helper_line()
 
     // Read the string size (D3), then subtract it from the line size to know how much characters we need to draw
     func.moveb(addr_(reg_A1, 0x2), reg_D3);
-    func.moveb(37, reg_D2);
+    func.moveq(37, reg_D2);
     func.subb(reg_D3, reg_D2);
     func.suba(reg_D2, reg_A2);
     func.suba(reg_D2, reg_A2);
@@ -681,10 +727,12 @@ uint32_t Engine::func_draw_text()
 
     // Iterate D2 times to write each letter tile of the string into the RAM
     func.label("loop_write_letter");
-    func.movew(addr_(reg_A2), reg_D0);  // Fetch data already present in the plane map
-    func.andiw(0x6000, reg_D0);                 // Filter everything but the palette info (in order to keep palette)
-    func.orb(addr_postinc_(reg_A1), reg_D0);    // Set the new tile ID
-    func.movew(reg_D0, addr_postinc_(reg_A2));  // Send the new data back inside the plane map
+    {
+        func.movew(addr_(reg_A2), reg_D0);          // Store tile descriptor already present in the plane map inside D0
+        func.andiw(0x6000, reg_D0);                 // Filter everything but the palette info (in order to keep palette)
+        func.orb(addr_postinc_(reg_A1), reg_D0);    // Set the new tile ID
+        func.movew(reg_D0, addr_postinc_(reg_A2));  // Send the new data back inside the plane map
+    }
     func.dbra(reg_D2, "loop_write_letter");
 
     func.movem_from_stack({ reg_D0,reg_D2,reg_D3 }, { reg_A2,reg_A3 });
@@ -706,7 +754,7 @@ uint32_t Engine::func_build_initial_plane_map()
     // ------------------------------------------------------------------------------------------
 
     md::Code func;
-    func.jsr(func_draw_all_option_values());
+    func.jsr(func_draw_all_selectable_values());
 
     func.movel(addr_(reg_A4, Info::STRINGS_OFFSET), reg_A1);
     func.moveq(0, reg_D0);
